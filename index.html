@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OKAGE - a daily ritual</title>
+<style>
+  html,body{margin:0;padding:0;background:#12100d;color:#f3ead8;font-family:Georgia,serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;}
+  #top{width:100%;max-width:1060px;display:flex;justify-content:space-between;align-items:baseline;padding:18px 26px 10px;}
+  .wordmark{font-size:13px;letter-spacing:.42em;text-transform:uppercase;color:#c9962e;}
+  #stamp{font-size:10px;letter-spacing:.24em;color:#7a6a4a;text-transform:uppercase;}
+  #wrap{position:relative;width:min(96vw,1000px);}
+  canvas#game{width:100%;display:block;border-radius:3px;background:#12100d;}
+  .hidden{display:none !important;}
+  .overlay{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;}
+  .card{position:relative;background:#f3ead8;color:#221c14;border-radius:3px;padding:26px 34px 22px;text-align:center;max-width:430px;margin-bottom:34px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+  .card .k{font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:#8a6a2a;margin-bottom:10px;}
+  .card h1{font-size:19px;font-weight:normal;letter-spacing:.06em;line-height:1.5;margin:0 0 12px;font-style:italic;}
+  .card .sub{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:#6a5a34;}
+  .card .btnrow{margin-top:14px;display:flex;gap:10px;justify-content:center;pointer-events:auto;}
+  .go{background:#c9962e;color:#12100d;border:none;font-family:Georgia,serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;padding:10px 22px;cursor:pointer;border-radius:2px;}
+  .alt{background:none;color:#6a5a34;border:1px solid #b09a5e;font-family:Georgia,serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;padding:10px 22px;cursor:pointer;border-radius:2px;}
+  .hanko{position:absolute;top:-13px;right:-13px;width:36px;height:36px;background:#9e2b1e;color:#f3ead8;display:flex;align-items:center;justify-content:center;font-size:20px;border-radius:4px;transform:rotate(-4deg);box-shadow:0 1px 0 rgba(0,0,0,.15);opacity:.92;}
+  .vert{position:absolute;left:18px;top:96px;writing-mode:vertical-rl;font-size:15px;letter-spacing:.5em;color:#6a5a34;user-select:none;}
+  #hint{text-align:center;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:#8a7440;padding:12px 0 4px;min-height:16px;}
+  footer{padding:14px 0 26px;font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:#5a4a24;text-align:center;}
+  footer a{color:#8a7440;text-decoration:none;border-bottom:1px dotted #5a4a24;}
+</style>
+</head>
+<body>
+<div id="top">
+  <div class="wordmark">Okage</div>
+  <div id="stamp"></div>
+</div>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div class="vert">おかげまいり</div>
+  <div id="done" class="overlay hidden">
+    <div class="card">
+      <div class="hanko">福</div>
+      <div class="k" id="dk">the blessing of the day</div>
+      <h1 id="dbless"></h1>
+      <div class="sub" id="dstreak"></div>
+      <div class="btnrow"><button class="go" id="torun">Run the course</button><button class="alt" id="again2">Sit a while</button></div>
+    </div>
+  </div>
+</div>
+<div id="hint"></div>
+<footer>the voice assistant that brings you luck - <a href="https://jacobegarcia.github.io/luckycat/">join the wishlist</a></footer>
+<script>
+'use strict';
+// ---------------- seeded daily ritual ----------------
+const qs=new URLSearchParams(location.search);
+const today=new Date();
+const seedStr=today.getFullYear()+'-'+(today.getMonth()+1)+'-'+today.getDate();
+let seedNum=0; for(const ch of seedStr) seedNum=(seedNum*31+ch.charCodeAt(0))>>>0;
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let rng=mulberry32(seedNum);
+document.getElementById('stamp').textContent=today.toLocaleDateString('en-US',{month:'short',day:'numeric'}).toUpperCase()+' - '+'日月火水木金土'[today.getDay()]+'曜日';
+
+const LS=(k,d)=>{ try{ const v=localStorage.getItem(k); return v===null?d:JSON.parse(v); }catch(e){ return d; } };
+const LSset=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} };
+
+const BLESSINGS=[
+"the cat turns your coin twice. luck follows.",
+"a bell heard once is heard everywhere.",
+"what you offer returns by another road.",
+"the night keeps your name now.",
+"small coin, long shadow.",
+"the daruma watches. the cat remembers.",
+"luck is a habit. you are practicing.",
+"the rope swings once more than you pulled. that extra is yours.",
+"somewhere a door you did not knock on opens.",
+"the moon is a coin someone offered long ago.",
+"go gently. the cat walks ahead of you.",
+"your streak is a string of lanterns. keep lighting them.",
+"the shrine is small. the blessing is not.",
+"what was stuck loosens tonight.",
+"answer the next message from an old friend.",
+"the cat bets on you. the cat does not lose.",
+"quiet work compounds.",
+"you rang. something far away stood up.",
+"carry the bell's echo into the morning.",
+"a koban spent in faith buys more than gold.",
+"the left paw brings people. the right paw brings fortune. tonight, both.",
+"nothing wasted. even the waiting counted.",
+"tomorrow's course is already kinder.",
+"the offering box is empty by morning. the luck is not."
+];
+const blessIdx=Math.floor(mulberry32(seedNum^0x9e37)()*BLESSINGS.length);
+
+// streak
+const dayKey=seedStr;
+const yest=new Date(today); yest.setDate(yest.getDate()-1);
+const yestKey=yest.getFullYear()+'-'+(yest.getMonth()+1)+'-'+yest.getDate();
+let streak=LS('okage_streak',0), lastDay=LS('okage_last','');
+const doneToday=(lastDay===dayKey);
+
+// ---------------- canvas ----------------
+const cv=document.getElementById('game'), ctx=cv.getContext('2d');
+let W=1000,H=640,DPR=1;
+function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize',resize); resize();
+
+const INK='#12100d', PAPER='#f3ead8', GOLD='#c9962e', GOLDL='#e8c26a', RED='#9e2b1e', WOOD='#3a2a18', WOODD='#241a10';
+
+const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2 };
+if(doneToday){ S.state='done'; S.glow=1; }
+if(qs.get('stage')==='offered'){ S.state='offered'; }
+if(qs.get('stage')==='done'){ S.state='done'; S.glow=1; setTimeout(showBlessing,600); }
+
+// ---------------- audio ----------------
+let AC=null, muted=false;
+function audio(){ try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); return AC; }catch(e){ return null; } }
+function tone(f0,f1,dur,type,vol,when){ if(muted||!AC) return; const t=AC.currentTime+(when||0);
+  const o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.setValueAtTime(Math.max(30,f0),t);
+  if(f1&&f1!==f0) o.frequency.exponentialRampToValueAtTime(Math.max(30,f1),t+dur);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur+.05); }
+function sfxBell(){ tone(1180,1180,.9,'sine',.06); tone(3257,3257,.6,'sine',.026); tone(2400,2400,.05,'triangle',.035); }
+function sfxClink(){ tone(2400,2400,.06,'triangle',.05); tone(3600,3400,.05,'sine',.03,.03); }
+function sfxSwish(){ tone(300,180,.18,'sine',.03); }
+function sfxDrone(){ tone(110,110,2.4,'sine',.028); tone(165,164,2.4,'sine',.02,.1); tone(220,219,2,'sine',.012,.2); }
+
+// ---------------- scene ----------------
+function groundY(){ return 470; }
+
+function drawSky(){
+  const g=ctx.createLinearGradient(0,0,0,groundY());
+  g.addColorStop(0,'#0a0908'); g.addColorStop(.7,'#16130e'); g.addColorStop(1,'#1c1710');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,groundY());
+  // stars (seeded, slow twinkle)
+  const rs=mulberry32(413);
+  for(let i=0;i<70;i++){ const x=rs()*W, y=rs()*300, tw=.25+.55*Math.abs(Math.sin(S.t*.7+i*2.1));
+    ctx.fillStyle='rgba(239,228,200,'+(tw*.5).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
+  // moon
+  ctx.save(); ctx.translate(778,118);
+  ctx.fillStyle='#efe4c8'; ctx.beginPath(); ctx.arc(0,0,44,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,48,-.6,2.2); ctx.stroke();
+  ctx.fillStyle='rgba(18,16,13,.16)'; ctx.beginPath(); ctx.arc(-12,-8,9,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(14,10,6,0,7); ctx.fill();
+  ctx.restore();
+  // drifting clouds
+  ctx.fillStyle='rgba(60,50,36,.35)';
+  for(let i=0;i<4;i++){ const cx=((i*337+S.t*(4+i*1.7))%(W+260))-130, cy=60+i*34;
+    ctx.beginPath(); ctx.ellipse(cx,cy,90+i*22,13+i*3,0,0,7); ctx.fill(); }
+}
+function drawGround(){
+  const g=ctx.createLinearGradient(0,groundY(),0,H);
+  g.addColorStop(0,'#211b12'); g.addColorStop(1,'#14100b');
+  ctx.fillStyle=g; ctx.fillRect(0,groundY(),W,H-groundY());
+  // gravel speckle (seeded)
+  const r2=mulberry32(77); ctx.fillStyle='rgba(243,234,216,.05)';
+  for(let i=0;i<160;i++){ const x=r2()*W, y=groundY()+r2()*(H-groundY()); ctx.fillRect(x,y,1.6,1.1); }
+  // stone path
+  for(let i=0;i<5;i++){ const w=66+i*26, x=W/2-w/2+Math.sin(i*9)*8, y=478+i*30;
+    ctx.fillStyle='rgba(74,66,54,.9)'; ctx.beginPath(); ctx.roundRect(x,y,w,20,7); ctx.fill();
+    ctx.strokeStyle='rgba(20,16,10,.6)'; ctx.lineWidth=1.4; ctx.stroke(); }
+}
+function lantern(x,y,s){
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
+  ctx.fillStyle='#2c2620';
+  ctx.beginPath(); ctx.roundRect(-13,-8,26,10,3); ctx.fill();            // base
+  ctx.fillRect(-5,-44,10,38);                                            // pillar
+  ctx.beginPath(); ctx.roundRect(-15,-66,30,20,3); ctx.fill();           // firebox
+  ctx.beginPath(); ctx.moveTo(-20,-66); ctx.lineTo(20,-66); ctx.lineTo(12,-78); ctx.lineTo(-12,-78); ctx.closePath(); ctx.fill(); // roof
+  ctx.beginPath(); ctx.arc(0,-82,3.4,0,7); ctx.fill();                   // jewel
+  const fl=.75+.25*Math.sin(S.t*7+x);
+  ctx.fillStyle='rgba(232,194,106,'+(.95*fl).toFixed(3)+')'; ctx.fillRect(-8,-62,16,12); // warm window
+  ctx.fillStyle='rgba(255,236,180,'+(.9*fl).toFixed(3)+')'; ctx.fillRect(-3,-58,6,5);      // flame core
+  ctx.fillStyle='rgba(232,194,106,'+(.16*fl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,-56,36,0,7); ctx.fill();
+  ctx.fillStyle='rgba(232,194,106,'+(.06*fl).toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,4,34,8,0,0,7); ctx.fill(); // ground pool
+  ctx.restore();
+}
+function drawShrine(){
+  const cx=W/2, gy=groundY();
+  // inner glow behind the cat when awake
+  if(S.glow>0){ const gl=ctx.createRadialGradient(cx,gy-120,10,cx,gy-120,150);
+    gl.addColorStop(0,'rgba(232,194,106,'+(.34*S.glow).toFixed(3)+')'); gl.addColorStop(1,'rgba(232,194,106,0)');
+    ctx.fillStyle=gl; ctx.fillRect(cx-170,gy-260,340,270); }
+  // platform
+  ctx.fillStyle='#1c150d'; ctx.fillRect(cx-128,gy-18,256,10);
+  ctx.fillStyle=WOOD; ctx.fillRect(cx-120,gy-28,240,12);
+  for(const sx of [-104,104]){ ctx.fillStyle='#2c2620'; ctx.beginPath(); ctx.roundRect(cx+sx-9,gy-10,18,12,2); ctx.fill(); }
+  // back wall + pillars
+  ctx.fillStyle='#1e1610'; ctx.fillRect(cx-100,gy-160,200,134);
+  ctx.fillStyle=WOOD; for(const sx of [-112,104]) ctx.fillRect(cx+sx,gy-182,16,158);
+  ctx.fillStyle='rgba(201,150,46,.65)'; ctx.fillRect(cx-112,gy-184,224,3);
+  // roof
+  ctx.fillStyle='#181209';
+  ctx.beginPath(); ctx.moveTo(cx-142,gy-182); ctx.lineTo(cx+142,gy-182); ctx.lineTo(cx+92,gy-238); ctx.lineTo(cx-92,gy-238); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(cx-142,gy-182); ctx.lineTo(cx-92,gy-238); ctx.lineTo(cx+92,gy-238); ctx.lineTo(cx+142,gy-182); ctx.stroke();
+  ctx.fillStyle=GOLD; ctx.fillRect(cx-3,gy-246,6,10); // ridge crest
+}
+function drawBox(){
+  const cx=W/2, gy=groundY();
+  ctx.fillStyle='#150f08'; ctx.fillRect(cx-74,gy+6,148,46);
+  ctx.fillStyle=WOOD; ctx.fillRect(cx-70,gy,140,46);
+  ctx.fillStyle=RED; ctx.fillRect(cx-70,gy,140,5);
+  ctx.fillStyle='#150f08';
+  for(let i=0;i<7;i++) ctx.fillRect(cx-58+i*17,gy+8,5,34); // slats
+  ctx.strokeStyle='rgba(201,150,46,.4)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-70,gy,140,46);
+}
+function drawRope(){
+  const cx=W/2-34, topY=groundY()-182+2;
+  const a=S.ropeA, bx=cx+Math.sin(a)*56, by=topY+58*Math.cos(a);
+  ctx.strokeStyle='#8a7440'; ctx.lineWidth=3.4;
+  ctx.beginPath(); ctx.moveTo(cx,topY); ctx.quadraticCurveTo(cx+Math.sin(a)*30,topY+30,bx,by-14); ctx.stroke();
+  ctx.save(); ctx.translate(bx,by); ctx.rotate(a*.8);
+  ctx.fillStyle=GOLD; ctx.beginPath(); ctx.arc(0,0,15,0,7); ctx.fill();
+  ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.4; for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(i*5.4,-13); ctx.lineTo(i*5.4,13); ctx.stroke(); }
+  ctx.fillStyle=RED; ctx.fillRect(-15,-3,30,5);
+  ctx.fillStyle='#2c2620'; ctx.beginPath(); ctx.arc(0,15,3,0,7); ctx.fill();
+  ctx.restore();
+}
+function drawCat(){
+  const cx=W/2, gy=groundY()-28, s=1.05;
+  ctx.save(); ctx.translate(cx+26,gy); ctx.scale(s,s);
+  const awake=S.glow>.5, nod=S.ackT>=0?Math.min(1,(S.t-S.ackT)*1.4):0;
+  const wave=awake?Math.sin(S.t*2.6)*.16:0;
+  ctx.lineJoin='round';
+  // tail curled right
+  ctx.strokeStyle='#ece0c4'; ctx.lineWidth=13; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(38,-16); ctx.quadraticCurveTo(60,-18,54,-48); ctx.stroke();
+  // haunched body
+  ctx.fillStyle='#f3ead8';
+  ctx.beginPath(); ctx.ellipse(0,-34,44,38,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0,-58,30,30,0,0,7); ctx.fill(); // chest
+  // shading
+  ctx.fillStyle='rgba(190,168,130,.35)'; ctx.beginPath(); ctx.ellipse(-16,-30,26,24,0,0,7); ctx.fill();
+  // collar + bell
+  ctx.strokeStyle=RED; ctx.lineWidth=7; ctx.beginPath(); ctx.arc(0,-72,24,.35,2.79); ctx.stroke();
+  ctx.fillStyle=GOLD; ctx.beginPath(); ctx.arc(0,-50,6.4,0,7); ctx.fill();
+  ctx.fillStyle='#7a5a14'; ctx.fillRect(-4,-52,8,2.4);
+  // head
+  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.arc(0,-102,32,0,7); ctx.fill();
+  // ears
+  ctx.beginPath(); ctx.moveTo(-26,-120); ctx.lineTo(-33,-148); ctx.lineTo(-8,-132); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(26,-120); ctx.lineTo(33,-148); ctx.lineTo(8,-132); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=RED;
+  ctx.beginPath(); ctx.moveTo(-24,-124); ctx.lineTo(-28,-141); ctx.lineTo(-13,-131); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(24,-124); ctx.lineTo(28,-141); ctx.lineTo(13,-131); ctx.closePath(); ctx.fill();
+  // face
+  ctx.strokeStyle='#2c2620'; ctx.lineWidth=2.6; ctx.lineCap='round';
+  if(awake){ ctx.fillStyle='#2c2620';
+    ctx.beginPath(); ctx.arc(-12,-104,3.2,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12,-104,3.2,0,7); ctx.fill();
+    ctx.fillStyle='rgba(243,234,216,.9)'; ctx.beginPath(); ctx.arc(-11,-105,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(13,-105,1,0,7); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.arc(-12,-106,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(12,-106,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(-3,-95); ctx.lineTo(3,-95); ctx.lineTo(0,-91); ctx.closePath(); ctx.fillStyle='#c9755a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(-4,-89,3.4,.1*Math.PI,.9*Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(4,-89,3.4,.1*Math.PI,.9*Math.PI); ctx.stroke();
+  // left paw resting on koban
+  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.ellipse(-26,-46,11,15,-.3,0,7); ctx.fill();
+  ctx.save(); ctx.translate(-30,-26); ctx.rotate(-.12);
+  ctx.fillStyle=GOLD; ctx.beginPath(); ctx.ellipse(0,0,17,13,0,0,7); ctx.fill();
+  ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.ellipse(0,0,13,9.4,0,0,7); ctx.stroke();
+  ctx.fillStyle='#7a5a14'; ctx.font='bold 10px Georgia'; ctx.textAlign='center'; ctx.fillText('福',0,3.5);
+  ctx.restore();
+  // right paw raised - beckons once awake
+  ctx.save(); ctx.translate(24,-76); ctx.rotate(awake?(-.5+wave):-.18);
+  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.roundRect(-9,-40,18,44,9); ctx.fill();
+  ctx.fillStyle='#e09a8a'; ctx.beginPath(); ctx.arc(0,-32,4.6,0,7); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+function drawCoin(){
+  if(S.coinT<0) return;
+  const t=Math.min(1,(S.t-S.coinT)*2.1), cx=W/2;
+  const x=cx+ (Math.sin(t*Math.PI)*-30), y=600 - Math.sin(t*Math.PI)*130 - t*110;
+  if(t<1){ ctx.save(); ctx.translate(x,y); ctx.rotate(t*9);
+    ctx.fillStyle=GOLD; ctx.beginPath(); ctx.ellipse(0,0,10,8,0,0,7); ctx.fill();
+    ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.ellipse(0,0,7,5.4,0,0,7); ctx.stroke(); ctx.restore(); }
+}
+function drawParts(){
+  for(const p of S.parts){ ctx.globalAlpha=Math.max(0,p.ttl*1.6); ctx.fillStyle=p.col; ctx.fillRect(p.x,p.y,p.s,p.s); }
+  ctx.globalAlpha=1;
+  // autumn leaves
+  for(const l of S.leaves){ ctx.save(); ctx.translate(l.x,l.y); ctx.rotate(Math.sin(S.t*2+l.ph)*.8);
+    ctx.fillStyle='rgba(158,43,30,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,4.6,2.6,0,0,7); ctx.fill(); ctx.restore(); }
+}
+function draw(){
+  drawSky(); drawGround();
+  lantern(206,groundY()-4,1.06); lantern(794,groundY()-4,1.06);
+  drawShrine();
+  drawCat();
+  drawRope();
+  drawBox();
+  drawCoin();
+  drawParts();
+  // vignette
+  const v=ctx.createRadialGradient(W/2,H*.45,H*.3,W/2,H*.45,H*.95);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(6,5,3,.55)');
+  ctx.fillStyle=v; ctx.fillRect(0,0,W,H);
+}
+
+// ---------------- ritual flow ----------------
+const hintEl=document.getElementById('hint');
+function setHint(){
+  hintEl.textContent = S.state==='arrive' ? 'offer a coin - tap the box'
+    : S.state==='offered' ? 'ring the suzu - tap the bell'
+    : 'the cat keeps the night - return tomorrow';
+}
+function offer(){ if(S.state!=='arrive') return; S.state='offered'; S.coinT=S.t; sfxSwish(); setTimeout(sfxClink,460);
+  for(let i=0;i<10;i++) S.parts.push({x:W/2-16+Math.random()*32,y:groundY()+2,vx:0,vy:0,s:2,ttl:.6,col:GOLDL}); setHint(); }
+function ring(){ if(S.state!=='offered'&&S.state!=='done') return;
+  S.ropeV=2.6; sfxBell();
+  if(S.state==='offered'){ S.state='done'; S.ackT=S.t;
+    streak=(lastDay===yestKey)?streak+1:(doneToday?streak:1); lastDay=dayKey; LSset('okage_streak',streak); LSset('okage_last',dayKey);
+    sfxDrone(); setTimeout(showBlessing,1500); }
+  setHint(); }
+function showBlessing(){
+  document.getElementById('dbless').textContent='\u201C'+BLESSINGS[blessIdx]+'\u201D';
+  document.getElementById('dstreak').textContent='day '+streak+' of your ritual'+(streak>1?' - the cat remembers':'');
+  document.getElementById('done').classList.remove('hidden');
+}
+if(doneToday){ setTimeout(showBlessing,400); }
+
+function hit(x,y){
+  const r=cv.getBoundingClientRect(), px=(x-r.left)/r.width*W, py=(y-r.top)/r.height*H;
+  const cx=W/2, gy=groundY();
+  if(S.state==='arrive'){ if(px>cx-80&&px<cx+80&&py>gy-10&&py<gy+56) offer(); else offer(); }
+  else if(S.state==='offered'){ ring(); }
+  else { S.ropeV=Math.max(S.ropeV,1.8); sfxBell(); }
+}
+cv.addEventListener('pointerdown',e=>{ audio(); hit(e.clientX,e.clientY); });
+addEventListener('keydown',e=>{ if(e.code==='Space'||e.code==='Enter'){ e.preventDefault(); audio(); if(S.state==='arrive') offer(); else ring(); } });
+document.getElementById('torun').onclick=()=>{ location.href='https://jacobegarcia.github.io/lucky-runner/'; };
+document.getElementById('again2').onclick=()=>{ document.getElementById('done').classList.add('hidden'); };
+setHint();
+
+// ---------------- loop ----------------
+let last=0;
+function frame(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0); last=ts; S.t+=dt;
+  // rope physics
+  S.ropeV+=(-S.ropeA*14)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
+  // acknowledgment glow
+  if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8);
+  // particles
+  for(let i=S.parts.length-1;i>=0;i--){ const p=S.parts[i]; p.ttl-=dt; p.y-=20*dt; if(p.ttl<=0) S.parts.splice(i,1); }
+  if(Math.random()<dt*.5) S.leaves.push({x:W+20,y:-10,vy:22+Math.random()*18,ph:Math.random()*7,a:.4+Math.random()*.3,ttl:16});
+  for(let i=S.leaves.length-1;i>=0;i--){ const l=S.leaves[i]; l.ttl-=dt; l.y+=l.vy*dt; l.x-=(26+Math.sin(S.t+l.ph)*10)*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; if(l.ttl<=0||l.x<-30) S.leaves.splice(i,1); }
+  // crickets
+  if(AC&&!muted){ S.chirpT-=dt; if(S.chirpT<=0){ S.chirpT=1.6+Math.random()*2.8; tone(4300,4300,.03,'sine',.004); tone(4600,4600,.03,'sine',.003,.09); } }
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------- QA ----------------
+window.onerror=(m,src,l)=>{ window.__err='ERR '+m+' @'+l; };
+if(qs.get('probe')){
+  const n=+(qs.get('frames')||120);
+  for(let i=0;i<n;i++){ const dt=1/60; S.t+=dt;
+    S.ropeV+=(-S.ropeA*14)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
+    if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8); }
+  if(qs.get('act')==='offer') offer();
+  if(qs.get('act')==='ring'){ offer(); ring(); }
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,glow:+S.glow.toFixed(2),err:window.__err||''});
+  draw();
+}
+</script>
+</body>
+</html>
