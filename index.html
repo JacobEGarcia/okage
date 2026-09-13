@@ -261,6 +261,26 @@ function drawEma(){
       ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+(re()*4-2),my+2+re()*3); ctx.stroke(); }
     ctx.restore();
   }
+  // your own plaques - one per day of the streak, on the lower cord, still fresh wood
+  if(streak>0){
+    const top2=top+40;
+    ctx.strokeStyle='#7a6438'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.moveTo(x0,top2); ctx.quadraticCurveTo((x0+x1)/2,top2+6,x1,top2); ctx.stroke();
+    const np=Math.min(streak,6), sp=(x1-x0-24)/np;
+    for(let i=0;i<np;i++){
+      const ex=x0+12+sp*(i+.5), ey=top2+3+Math.sin((i+.5)/np*Math.PI)*4, sw=Math.sin(S.t*1.1+i*2.3+1)*.07;
+      ctx.save(); ctx.translate(ex,ey); ctx.rotate(sw);
+      ctx.strokeStyle='#9e2b1e'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,4); ctx.stroke(); // red cord - yours
+      ctx.fillStyle='#d8b06a'; ctx.beginPath(); ctx.moveTo(-9,4); ctx.lineTo(9,4); ctx.lineTo(9,15); ctx.lineTo(0,21); ctx.lineTo(-9,15); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='rgba(20,16,10,.5)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='rgba(36,27,17,.8)'; // paw mark
+      ctx.beginPath(); ctx.ellipse(0,11.5,2.6,2,0,0,7); ctx.fill();
+      for(const dx of [-3.4,0,3.4]){ ctx.beginPath(); ctx.arc(dx,7.6+Math.abs(dx)*.28,1.15,0,7); ctx.fill(); }
+      ctx.restore();
+    }
+    if(streak>6){ ctx.fillStyle='rgba(232,194,106,.85)'; ctx.font='9px Georgia'; ctx.textAlign='left';
+      ctx.fillText('+'+(streak-6), x1+5, top2+10); }
+  }
 }
 function drawShrine(){
   const cx=W/2, gy=groundY();
