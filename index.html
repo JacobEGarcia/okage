@@ -139,6 +139,8 @@ const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, gl
 function moonPhase(){ return qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1; }
 const MP=moonPhase();
 const fullK=Math.min(1,Math.max(0,(((1-Math.cos(2*Math.PI*MP))/2)-.88)/.12));
+// rain nights - seeded by the day, about one in three; ?rain=0..1 forces
+const rainK=qs.get('rain')!=null?+qs.get('rain'):(mulberry32(seedNum^0x42a1)()<.32?.55+mulberry32(seedNum^0x77e1)()*.45:0);
 if(doneToday){ S.state='done'; S.glow=1; }
 if(qs.get('stage')==='offered'){ S.state='offered'; }
 if(qs.get('stage')==='done'){ S.state='done'; S.glow=1; setTimeout(showBlessing,600); }
@@ -155,6 +157,14 @@ function sfxBell(){ tone(1180,1180,.9,'sine',.06); tone(3257,3257,.6,'sine',.026
 function sfxClink(){ tone(2400,2400,.06,'triangle',.05); tone(3600,3400,.05,'sine',.03,.03); }
 function sfxSwish(){ tone(300,180,.18,'sine',.03); }
 function sfxDrone(){ tone(110,110,2.4,'sine',.028); tone(165,164,2.4,'sine',.02,.1); tone(220,219,2,'sine',.012,.2); }
+let rainG=null;
+function rainSet(k){ if(!AC) return; if(muted) k=0;
+  if(!rainG){ const len=AC.sampleRate*2, buf=AC.createBuffer(1,len,AC.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+    const src=AC.createBufferSource(); src.buffer=buf; src.loop=true;
+    const f=AC.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1500; f.Q.value=.45;
+    rainG=AC.createGain(); rainG.gain.value=0; src.connect(f); f.connect(rainG); rainG.connect(AC.destination); src.start(); }
+  rainG.gain.setTargetAtTime(k,AC.currentTime,.5); }
 
 // ---------------- scene ----------------
 function groundY(){ return 470; }
@@ -175,7 +185,7 @@ function drawSky(){
   // stars (seeded, slow twinkle)
   const rs=mulberry32(413);
   for(let i=0;i<70;i++){ const x=rs()*W, y=rs()*300, tw=.25+.55*Math.abs(Math.sin(S.t*.7+i*2.1));
-    ctx.fillStyle='rgba(239,228,200,'+(tw*.5*(1-dk*.75)).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
+    ctx.fillStyle='rgba(239,228,200,'+(tw*.5*(1-dk*.75)*(1-rainK*.7)).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
   // moon - real phase; silver halo on the full nights
   const mp=MP;
   if(fullK>0){ const halo=ctx.createRadialGradient(778,118,30,778,118,150);
@@ -196,7 +206,7 @@ function drawSky(){
   ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,48,-.6,2.2); ctx.stroke();
   ctx.restore(); ctx.globalAlpha=1;
   // drifting clouds
-  ctx.fillStyle='rgba(60,50,36,.35)';
+  ctx.fillStyle=rainK>0?'rgba(44,42,40,'+(.35+.3*rainK).toFixed(3)+')':'rgba(60,50,36,.35)';
   for(let i=0;i<4;i++){ const cx=((i*337+S.t*(4+i*1.7))%(W+260))-130, cy=60+i*34;
     ctx.beginPath(); ctx.ellipse(cx,cy,90+i*22,13+i*3,0,0,7); ctx.fill(); }
 }
@@ -411,6 +421,14 @@ function draw(){
   drawFurin();
   drawCoin();
   drawParts();
+  if(rainK>0){ // rain on the roof
+    ctx.strokeStyle='rgba(196,208,224,'+(.14*rainK).toFixed(3)+')'; ctx.lineWidth=1.1;
+    ctx.beginPath();
+    const rn=Math.round(90*rainK);
+    for(let i=0;i<rn;i++){ const rx=((i*167+S.t*340)%(W+40))-20, ry=((i*271+S.t*620)%(H+60))-30;
+      ctx.moveTo(rx,ry); ctx.lineTo(rx-4,ry+16); }
+    ctx.stroke();
+    ctx.fillStyle='rgba(180,200,222,'+(.05*rainK).toFixed(3)+')'; ctx.fillRect(0,groundY(),W,H-groundY()); }
   // vignette
   const v=ctx.createRadialGradient(W/2,H*.45,H*.3,W/2,H*.45,H*.95);
   v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(6,5,3,.55)');
@@ -434,7 +452,10 @@ function ring(){ if(S.state!=='offered'&&S.state!=='done') return;
     sfxDrone(); setTimeout(showBlessing,1500); }
   setHint(); }
 function showBlessing(){
-  if(fullK>0.8) document.getElementById('dk').textContent='the blessing of the day - \u6E80\u6708 full moon';
+  const kk=['the blessing of the day'];
+  if(fullK>0.8) kk.push('\u6E80\u6708 full moon');
+  if(rainK>0) kk.push('\u96E8 rain on the roof');
+  document.getElementById('dk').textContent=kk.join(' - ');
   document.getElementById('dbless').textContent='\u201C'+BLESSINGS[blessIdx]+'\u201D';
   document.getElementById('dstreak').textContent='day '+streak+' of your ritual'+(streak>1?' - the cat remembers':'');
   if(omamori>0){ document.getElementById('domamo').classList.remove('hidden');
@@ -485,6 +506,9 @@ function step(dt){ S.t+=dt;
   // furin chime on strong gusts
   if(AC&&!muted){ S.furinT-=dt; if(S.furinT<=0){ S.furinT=6+Math.random()*9;
     if(S.furinGust>.5){ const f0=2900+Math.random()*900; tone(f0,f0,.5,'sine',.012); tone(f0*1.5,f0*1.5,.4,'sine',.008,.1); } } }
+  // rain bed + roof drips
+  if(AC) rainSet(rainK*.05);
+  if(AC&&!muted&&rainK>0){ S.dripT=(S.dripT||2.5)-dt; if(S.dripT<=0){ S.dripT=2+Math.random()*5; tone(2100+Math.random()*600,1600,.05,'sine',.004); } }
   // crickets
   if(AC&&!muted){ S.chirpT-=dt; if(S.chirpT<=0){ S.chirpT=1.6+Math.random()*2.8; tone(4300,4300,.03,'sine',.004); tone(4600,4600,.03,'sine',.003,.09); } }
 }
@@ -503,7 +527,7 @@ if(qs.get('probe')){
   if(qs.get('act')==='offer') offer();
   if(qs.get('act')==='ring'){ offer(); ring(); }
   if(qs.get('act')==='ema'){ draw(); if(S.ema&&S.ema.length){ showWish(S.ema[0].w); window.__wish=S.ema[0].w; } }
-  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),glow:+S.glow.toFixed(2),err:window.__err||''});
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),rain:+rainK.toFixed(2),glow:+S.glow.toFixed(2),err:window.__err||''});
   draw();
 }
 </script>
