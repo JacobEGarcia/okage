@@ -305,8 +305,7 @@ function drawShrine(){
 }
 function drawFurin(){
   const cx=W/2, gy=groundY();
-  const gust=Math.sin(S.t*.5)*.5+Math.sin(S.t*1.7)*.3+Math.sin(S.t*3.1)*.2;
-  S.furinGust=Math.abs(gust);
+  const gust=S.wind||0;
   ctx.save(); ctx.translate(cx-118,gy-186); ctx.rotate(gust*.16);
   ctx.strokeStyle='#8a7440'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,10); ctx.stroke();
   const gr=ctx.createRadialGradient(-3,15,2,0,18,14);
@@ -418,7 +417,8 @@ function drawParts(){
   for(const p of S.parts){ ctx.globalAlpha=Math.max(0,p.ttl*1.6); ctx.fillStyle=p.col; ctx.fillRect(p.x,p.y,p.s,p.s); }
   ctx.globalAlpha=1;
   // seasonal drift: sakura petals / fireflies / maple leaves / snow
-  for(const l of S.leaves){ ctx.save(); ctx.translate(l.x,l.y);
+  const wob=(S.wind||0)*26;
+  for(const l of S.leaves){ ctx.save(); ctx.translate(l.x+wob,l.y);
     if(l.k==='firefly'){ const bl=Math.max(0,Math.sin(S.t*2.4+l.ph));
       ctx.fillStyle='rgba(214,226,140,'+(.10*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
       ctx.fillStyle='rgba(242,246,206,'+(.85*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,1.9,0,7); ctx.fill(); }
@@ -509,8 +509,11 @@ setHint();
 // ---------------- loop ----------------
 let last=0;
 function step(dt){ S.t+=dt;
-  // rope physics
-  S.ropeV+=(-S.ropeA*14)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
+  // one wind over the whole shrine - the furin's gust is the world's gust
+  S.wind=Math.sin(S.t*.5)*.5+Math.sin(S.t*1.7)*.3+Math.sin(S.t*3.1)*.2;
+  S.furinGust=Math.abs(S.wind);
+  // rope physics - the wind breathes on the suzu rope even untouched
+  S.ropeV+=(-S.ropeA*14+S.wind*.5)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
   // acknowledgment glow
   if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8);
   // particles
@@ -521,7 +524,7 @@ function step(dt){ S.t+=dt;
   if(season==='summer' && Math.random()<dt*.35 && S.leaves.length<14) S.leaves.push({k:'firefly',x:60+Math.random()*(W-120),y:groundY()-8-Math.random()*120,vy:-6-Math.random()*7,ph:Math.random()*7,a:1,ttl:12});
   for(let i=S.leaves.length-1;i>=0;i--){ const l=S.leaves[i]; l.ttl-=dt;
     if(l.k==='firefly'){ l.y+=l.vy*dt; l.x+=Math.sin(S.t*.9+l.ph)*14*dt; if(l.y<30) l.vy=Math.abs(l.vy)*.6; }
-    else { l.y+=l.vy*dt; l.x-=(l.k==='snow'?8:26)*dt+Math.sin(S.t+l.ph)*10*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; }
+    else { l.y+=l.vy*dt; l.x-=(l.k==='snow'?8:26)*dt+Math.sin(S.t+l.ph)*10*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; l.x+=(S.wind||0)*42*dt; }
     if(l.ttl<=0||l.x<-30||l.y>H+20) S.leaves.splice(i,1); }
   // furin chime on strong gusts
   if(AC&&!muted){ S.furinT-=dt; if(S.furinT<=0){ S.furinT=6+Math.random()*9;
