@@ -328,6 +328,14 @@ function drawBox(){
   ctx.fillStyle='#150f08';
   for(let i=0;i<7;i++) ctx.fillRect(cx-58+i*17,gy+8,5,34); // slats
   ctx.strokeStyle='rgba(201,150,46,.4)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-70,gy,140,46);
+  if(fullK>0.8){ // tsukimi dango - an offering set out for the full moon
+    const tx=cx+102, ty=gy+40;
+    ctx.fillStyle='#7a1f16'; ctx.beginPath(); ctx.roundRect(tx-24,ty-4,48,7,2); ctx.fill();
+    ctx.fillStyle='#f3ead8';
+    for(const dp of [[-9,-10],[9,-10],[0,-19]]){ ctx.beginPath(); ctx.arc(tx+dp[0],ty+dp[1],7,0,7); ctx.fill(); }
+    ctx.fillStyle='rgba(214,224,240,.4)'; // moonlight catching the dumplings
+    for(const dp of [[-11,-12],[7,-12],[-2,-21]]){ ctx.beginPath(); ctx.arc(tx+dp[0],ty+dp[1],2.2,0,7); ctx.fill(); }
+  }
 }
 function drawRope(){
   const cx=W/2-34, topY=groundY()-182+2;
