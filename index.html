@@ -135,6 +135,10 @@ addEventListener('resize',resize); resize();
 const INK='#12100d', PAPER='#f3ead8', GOLD='#c9962e', GOLDL='#e8c26a', RED='#9e2b1e', WOOD='#3a2a18', WOODD='#241a10';
 
 const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2, furinT:4, furinGust:0 };
+// real synodic phase (29.5306d from the 2000-01-06 new moon); fullK ~1 for the nights around full
+function moonPhase(){ return qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1; }
+const MP=moonPhase();
+const fullK=Math.min(1,Math.max(0,(((1-Math.cos(2*Math.PI*MP))/2)-.88)/.12));
 if(doneToday){ S.state='done'; S.glow=1; }
 if(qs.get('stage')==='offered'){ S.state='offered'; }
 if(qs.get('stage')==='done'){ S.state='done'; S.glow=1; setTimeout(showBlessing,600); }
@@ -160,9 +164,10 @@ const _CSS=c=>'rgb('+Math.round(c[0])+','+Math.round(c[1])+','+Math.round(c[2])+
 function drawSky(){
   const dk=S.glow; // the ritual brings the morning
   const g=ctx.createLinearGradient(0,0,0,groundY());
-  g.addColorStop(0,_CSS(_MIX([10,9,8],[36,32,50],dk)));
-  g.addColorStop(.7,_CSS(_MIX([22,19,14],[70,48,36],dk)));
-  g.addColorStop(1,_CSS(_MIX([28,23,16],[146,86,40],dk)));
+  const fk=fullK*.85;
+  g.addColorStop(0,_CSS(_MIX(_MIX([10,9,8],[15,19,30],fk),[36,32,50],dk)));
+  g.addColorStop(.7,_CSS(_MIX(_MIX([22,19,14],[27,31,42],fk),[70,48,36],dk)));
+  g.addColorStop(1,_CSS(_MIX(_MIX([28,23,16],[38,40,48],fk),[146,86,40],dk)));
   ctx.fillStyle=g; ctx.fillRect(0,0,W,groundY());
   if(dk>0){ const hg=ctx.createRadialGradient(W*.24,groundY(),10,W*.24,groundY(),300);
     hg.addColorStop(0,'rgba(233,180,80,'+(.30*dk).toFixed(3)+')'); hg.addColorStop(1,'rgba(233,180,80,0)');
@@ -171,8 +176,12 @@ function drawSky(){
   const rs=mulberry32(413);
   for(let i=0;i<70;i++){ const x=rs()*W, y=rs()*300, tw=.25+.55*Math.abs(Math.sin(S.t*.7+i*2.1));
     ctx.fillStyle='rgba(239,228,200,'+(tw*.5*(1-dk*.75)).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
-  // moon - real phase (synodic 29.5306d from the 2000-01-06 new moon)
-  const mp=qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1;
+  // moon - real phase; silver halo on the full nights
+  const mp=MP;
+  if(fullK>0){ const halo=ctx.createRadialGradient(778,118,30,778,118,150);
+    halo.addColorStop(0,'rgba(214,224,240,'+(.20*fullK*(1-dk)).toFixed(3)+')');
+    halo.addColorStop(1,'rgba(214,224,240,0)');
+    ctx.fillStyle=halo; ctx.fillRect(778-160,0,320,300); }
   const mk=Math.cos(2*Math.PI*mp);
   ctx.save(); ctx.translate(778,118); if(mp>.5) ctx.scale(-1,1);
   ctx.globalAlpha=1-.45*dk;
@@ -196,7 +205,8 @@ function drawGround(){
   g.addColorStop(0,'#211b12'); g.addColorStop(1,'#14100b');
   ctx.fillStyle=g; ctx.fillRect(0,groundY(),W,H-groundY());
   // gravel speckle (seeded)
-  const r2=mulberry32(77); ctx.fillStyle='rgba(243,234,216,.05)';
+  if(fullK>0){ ctx.fillStyle='rgba(190,205,226,'+(.06*fullK).toFixed(3)+')'; ctx.fillRect(0,groundY(),W,H-groundY()); }
+  const r2=mulberry32(77); ctx.fillStyle=fullK>0?'rgba(226,232,240,'+(0.05+0.06*fullK).toFixed(3)+')':'rgba(243,234,216,.05)';
   for(let i=0;i<160;i++){ const x=r2()*W, y=groundY()+r2()*(H-groundY()); ctx.fillRect(x,y,1.6,1.1); }
   // stone path
   for(let i=0;i<5;i++){ const w=66+i*26, x=W/2-w/2+Math.sin(i*9)*8, y=478+i*30;
@@ -424,6 +434,7 @@ function ring(){ if(S.state!=='offered'&&S.state!=='done') return;
     sfxDrone(); setTimeout(showBlessing,1500); }
   setHint(); }
 function showBlessing(){
+  if(fullK>0.8) document.getElementById('dk').textContent='the blessing of the day - \u6E80\u6708 full moon';
   document.getElementById('dbless').textContent='\u201C'+BLESSINGS[blessIdx]+'\u201D';
   document.getElementById('dstreak').textContent='day '+streak+' of your ritual'+(streak>1?' - the cat remembers':'');
   if(omamori>0){ document.getElementById('domamo').classList.remove('hidden');
@@ -492,7 +503,7 @@ if(qs.get('probe')){
   if(qs.get('act')==='offer') offer();
   if(qs.get('act')==='ring'){ offer(); ring(); }
   if(qs.get('act')==='ema'){ draw(); if(S.ema&&S.ema.length){ showWish(S.ema[0].w); window.__wish=S.ema[0].w; } }
-  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+(qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1).toFixed(3),glow:+S.glow.toFixed(2),err:window.__err||''});
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),glow:+S.glow.toFixed(2),err:window.__err||''});
   draw();
 }
 </script>
