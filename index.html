@@ -23,6 +23,8 @@
   .hanko{position:absolute;top:-13px;right:-13px;width:36px;height:36px;background:#9e2b1e;color:#f3ead8;display:flex;align-items:center;justify-content:center;font-size:20px;border-radius:4px;transform:rotate(-4deg);box-shadow:0 1px 0 rgba(0,0,0,.15);opacity:.92;}
   .vert{position:absolute;left:18px;top:96px;writing-mode:vertical-rl;font-size:15px;letter-spacing:.5em;color:#6a5a34;user-select:none;}
   #hint{text-align:center;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:#8a7440;padding:12px 0 4px;min-height:16px;}
+  #wish{text-align:center;font-size:14px;font-style:italic;color:#dcbb6e;min-height:18px;padding:2px 0 0;opacity:0;transition:opacity .6s;}
+  #wish.show{opacity:1;}
   footer{padding:14px 0 26px;font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:#5a4a24;text-align:center;}
   footer a{color:#8a7440;text-decoration:none;border-bottom:1px dotted #5a4a24;}
 </style>
@@ -41,10 +43,18 @@
       <div class="k" id="dk">the blessing of the day</div>
       <h1 id="dbless"></h1>
       <div class="sub" id="dstreak"></div>
+      <div id="domamo" class="hidden" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:9px;">
+        <span style="display:inline-block;width:16px;height:22px;background:#9e2b1e;border-radius:3px 3px 5px 5px;position:relative;">
+          <span style="position:absolute;top:-4px;left:2px;right:2px;height:6px;background:#c9962e;border-radius:2px;"></span>
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#f3ead8;font-size:9px;">福</span>
+        </span>
+        <span id="domamotx" style="font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8a6a2a;"></span>
+      </div>
       <div class="btnrow"><button class="go" id="torun">Run the course</button><button class="alt" id="again2">Sit a while</button></div>
     </div>
   </div>
 </div>
+<div id="wish"></div>
 <div id="hint"></div>
 <footer>the voice assistant that brings you luck - <a href="https://jacobegarcia.github.io/luckycat/">join the wishlist</a></footer>
 <script>
@@ -89,6 +99,22 @@ const BLESSINGS=[
 "tomorrow's course is already kinder.",
 "the offering box is empty by morning. the luck is not."
 ];
+const WISHES=[
+"may the train home come on time",
+"for one more good year with the old dog",
+"let the letter say yes",
+"may the rain wait until she is home",
+"for the courage to begin again",
+"let the soup taste like her mother's",
+"may the exam go quietly",
+"for a phone call from him",
+"let the seedlings take root",
+"may the debt shrink faster than the worry",
+"for one clear night to see the stars",
+"let the interview be kind",
+"may the cat forgive the late dinner",
+"for morning people to sleep in, just once"
+];
 const blessIdx=Math.floor(mulberry32(seedNum^0x9e37)()*BLESSINGS.length);
 
 // streak
@@ -96,6 +122,8 @@ const dayKey=seedStr;
 const yest=new Date(today); yest.setDate(yest.getDate()-1);
 const yestKey=yest.getFullYear()+'-'+(yest.getMonth()+1)+'-'+yest.getDate();
 let streak=LS('okage_streak',0), lastDay=LS('okage_last','');
+let omamori=LS('okage_omamori',0), omamoriNew=false;
+if(qs.get('streak')){ streak=+qs.get('streak')||0; lastDay=yestKey; } // lever implies an unbroken chain
 const doneToday=(lastDay===dayKey);
 
 // ---------------- canvas ----------------
@@ -106,7 +134,7 @@ addEventListener('resize',resize); resize();
 
 const INK='#12100d', PAPER='#f3ead8', GOLD='#c9962e', GOLDL='#e8c26a', RED='#9e2b1e', WOOD='#3a2a18', WOODD='#241a10';
 
-const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2 };
+const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2, furinT:4, furinGust:0 };
 if(doneToday){ S.state='done'; S.glow=1; }
 if(qs.get('stage')==='offered'){ S.state='offered'; }
 if(qs.get('stage')==='done'){ S.state='done'; S.glow=1; setTimeout(showBlessing,600); }
@@ -127,20 +155,37 @@ function sfxDrone(){ tone(110,110,2.4,'sine',.028); tone(165,164,2.4,'sine',.02,
 // ---------------- scene ----------------
 function groundY(){ return 470; }
 
+const _MIX=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+const _CSS=c=>'rgb('+Math.round(c[0])+','+Math.round(c[1])+','+Math.round(c[2])+')';
 function drawSky(){
+  const dk=S.glow; // the ritual brings the morning
   const g=ctx.createLinearGradient(0,0,0,groundY());
-  g.addColorStop(0,'#0a0908'); g.addColorStop(.7,'#16130e'); g.addColorStop(1,'#1c1710');
+  g.addColorStop(0,_CSS(_MIX([10,9,8],[36,32,50],dk)));
+  g.addColorStop(.7,_CSS(_MIX([22,19,14],[70,48,36],dk)));
+  g.addColorStop(1,_CSS(_MIX([28,23,16],[146,86,40],dk)));
   ctx.fillStyle=g; ctx.fillRect(0,0,W,groundY());
+  if(dk>0){ const hg=ctx.createRadialGradient(W*.24,groundY(),10,W*.24,groundY(),300);
+    hg.addColorStop(0,'rgba(233,180,80,'+(.30*dk).toFixed(3)+')'); hg.addColorStop(1,'rgba(233,180,80,0)');
+    ctx.fillStyle=hg; ctx.fillRect(0,groundY()-240,W,240); }
   // stars (seeded, slow twinkle)
   const rs=mulberry32(413);
   for(let i=0;i<70;i++){ const x=rs()*W, y=rs()*300, tw=.25+.55*Math.abs(Math.sin(S.t*.7+i*2.1));
-    ctx.fillStyle='rgba(239,228,200,'+(tw*.5).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
-  // moon
-  ctx.save(); ctx.translate(778,118);
-  ctx.fillStyle='#efe4c8'; ctx.beginPath(); ctx.arc(0,0,44,0,7); ctx.fill();
-  ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,48,-.6,2.2); ctx.stroke();
+    ctx.fillStyle='rgba(239,228,200,'+(tw*.5*(1-dk*.75)).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
+  // moon - real phase (synodic 29.5306d from the 2000-01-06 new moon)
+  const mp=qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1;
+  const mk=Math.cos(2*Math.PI*mp);
+  ctx.save(); ctx.translate(778,118); if(mp>.5) ctx.scale(-1,1);
+  ctx.globalAlpha=1-.45*dk;
+  ctx.fillStyle='rgba(80,72,58,.35)'; ctx.beginPath(); ctx.arc(0,0,44,0,7); ctx.fill(); // earthshine on the dark side
+  ctx.fillStyle='#efe4c8'; ctx.beginPath();
+  ctx.arc(0,0,44,-Math.PI/2,Math.PI/2);
+  ctx.ellipse(0,0,44*Math.abs(mk),44,0,Math.PI/2,-Math.PI/2,mk>0);
+  ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.clip(); // maria live on the lit face
   ctx.fillStyle='rgba(18,16,13,.16)'; ctx.beginPath(); ctx.arc(-12,-8,9,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(14,10,6,0,7); ctx.fill();
   ctx.restore();
+  ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,48,-.6,2.2); ctx.stroke();
+  ctx.restore(); ctx.globalAlpha=1;
   // drifting clouds
   ctx.fillStyle='rgba(60,50,36,.35)';
   for(let i=0;i<4;i++){ const cx=((i*337+S.t*(4+i*1.7))%(W+260))-130, cy=60+i*34;
@@ -175,7 +220,8 @@ function lantern(x,y,s){
 }
 function drawEma(){
   const gy=groundY(), x0=640, x1=752, top=gy-88;
-  const re=mulberry32(seedNum^0x51f3);
+  S.ema=[];
+  const re=mulberry32(seedNum^0x51f3), wr=mulberry32(seedNum^0x77aa);
   ctx.lineCap='round';
   for(const px of [x0,x1]){ ctx.fillStyle='#241b11'; ctx.fillRect(px-3,top-8,6,gy-4-top+8);
     ctx.fillStyle='rgba(201,150,46,.5)'; ctx.fillRect(px-4,top-11,8,4); }
@@ -184,6 +230,7 @@ function drawEma(){
   const n=3+Math.floor(re()*3);
   for(let i=0;i<n;i++){
     const ex=x0+14+((x1-x0-28)/(n-1))*i, ey=top+4+Math.sin((i+.5)/n*Math.PI)*6, sw=Math.sin(S.t*1.1+i*1.7)*.06;
+    S.ema.push({x:ex,y:ey,w:Math.floor(wr()*WISHES.length)});
     ctx.save(); ctx.translate(ex,ey); ctx.rotate(sw);
     ctx.strokeStyle='#6a5836'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,4); ctx.stroke();
     ctx.fillStyle='#b98a4e'; ctx.beginPath(); ctx.moveTo(-11,4); ctx.lineTo(11,4); ctx.lineTo(11,18); ctx.lineTo(0,26); ctx.lineTo(-11,18); ctx.closePath(); ctx.fill();
@@ -216,6 +263,24 @@ function drawShrine(){
   ctx.beginPath(); ctx.moveTo(cx-142,gy-182); ctx.lineTo(cx-92,gy-238); ctx.lineTo(cx+92,gy-238); ctx.lineTo(cx+142,gy-182); ctx.stroke();
   ctx.fillStyle=GOLD; ctx.fillRect(cx-3,gy-246,6,10); // ridge crest
 }
+function drawFurin(){
+  const cx=W/2, gy=groundY();
+  const gust=Math.sin(S.t*.5)*.5+Math.sin(S.t*1.7)*.3+Math.sin(S.t*3.1)*.2;
+  S.furinGust=Math.abs(gust);
+  ctx.save(); ctx.translate(cx-118,gy-186); ctx.rotate(gust*.16);
+  ctx.strokeStyle='#8a7440'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,10); ctx.stroke();
+  const gr=ctx.createRadialGradient(-3,15,2,0,18,14);
+  gr.addColorStop(0,'rgba(243,234,216,.5)'); gr.addColorStop(.6,'rgba(190,200,210,.16)'); gr.addColorStop(1,'rgba(190,200,210,.05)');
+  ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(0,18,13,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(220,225,230,.38)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(0,18,13,Math.PI*1.05,Math.PI*1.95); ctx.stroke();
+  ctx.fillStyle='rgba(158,43,30,.5)'; ctx.beginPath(); ctx.ellipse(2,20,4,2.6,.5,0,7); ctx.fill(); // kingyo motif
+  ctx.strokeStyle='rgba(36,27,17,.8)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,26); ctx.lineTo(0,34); ctx.stroke();
+  ctx.save(); ctx.rotate(gust*.5); // the strip catches more wind than the glass
+  ctx.fillStyle='#f3ead8'; ctx.fillRect(-4,34,8,26);
+  ctx.strokeStyle='rgba(20,16,10,.4)'; ctx.strokeRect(-4,34,8,26);
+  ctx.fillStyle='#9e2b1e'; ctx.fillRect(-4,34,8,3);
+  ctx.restore(); ctx.restore();
+}
 function drawBox(){
   const cx=W/2, gy=groundY();
   ctx.fillStyle='#150f08'; ctx.fillRect(cx-74,gy+6,148,46);
@@ -242,14 +307,18 @@ function drawCat(){
   ctx.save(); ctx.translate(cx+26,gy); ctx.scale(s,s);
   const awake=S.glow>.5, nod=S.ackT>=0?Math.min(1,(S.t-S.ackT)*1.4):0;
   const wave=awake?Math.sin(S.t*2.6)*.16:0;
+  const breath=1+.022*Math.sin(S.t*1.4);
+  const tc=S.t%5.2, twitch=tc<.42?Math.sin(tc/.42*Math.PI*3)*.13:0; // left ear, every ~5s
+  const blink=awake&&(S.t%4.3)<.13;
+  const tailSw=Math.sin(S.t*1.1)*5;
   ctx.lineJoin='round';
   // tail curled right
   ctx.strokeStyle='#ece0c4'; ctx.lineWidth=13; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(38,-16); ctx.quadraticCurveTo(60,-18,54,-48); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(38,-16); ctx.quadraticCurveTo(60+tailSw,-18,54+tailSw,-48); ctx.stroke();
   // haunched body
   ctx.fillStyle='#f3ead8';
-  ctx.beginPath(); ctx.ellipse(0,-34,44,38,0,0,7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0,-58,30,30,0,0,7); ctx.fill(); // chest
+  ctx.beginPath(); ctx.ellipse(0,-34,44,38*breath,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0,-58,30*breath,30*breath,0,0,7); ctx.fill(); // chest
   // shading
   ctx.fillStyle='rgba(190,168,130,.35)'; ctx.beginPath(); ctx.ellipse(-16,-30,26,24,0,0,7); ctx.fill();
   // collar + bell
@@ -259,14 +328,21 @@ function drawCat(){
   // head
   ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.arc(0,-102,32,0,7); ctx.fill();
   // ears
+  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-twitch); ctx.translate(22,124);
   ctx.beginPath(); ctx.moveTo(-26,-120); ctx.lineTo(-33,-148); ctx.lineTo(-8,-132); ctx.closePath(); ctx.fill();
+  ctx.restore();
   ctx.beginPath(); ctx.moveTo(26,-120); ctx.lineTo(33,-148); ctx.lineTo(8,-132); ctx.closePath(); ctx.fill();
   ctx.fillStyle=RED;
+  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-twitch); ctx.translate(22,124);
   ctx.beginPath(); ctx.moveTo(-24,-124); ctx.lineTo(-28,-141); ctx.lineTo(-13,-131); ctx.closePath(); ctx.fill();
+  ctx.restore();
   ctx.beginPath(); ctx.moveTo(24,-124); ctx.lineTo(28,-141); ctx.lineTo(13,-131); ctx.closePath(); ctx.fill();
   // face
   ctx.strokeStyle='#2c2620'; ctx.lineWidth=2.6; ctx.lineCap='round';
-  if(awake){ ctx.fillStyle='#2c2620';
+  if(blink){
+    ctx.beginPath(); ctx.arc(-12,-104,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(12,-104,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
+  } else if(awake){ ctx.fillStyle='#2c2620';
     ctx.beginPath(); ctx.arc(-12,-104,3.2,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12,-104,3.2,0,7); ctx.fill();
     ctx.fillStyle='rgba(243,234,216,.9)'; ctx.beginPath(); ctx.arc(-11,-105,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(13,-105,1,0,7); ctx.fill();
   } else {
@@ -322,6 +398,7 @@ function draw(){
   drawCat();
   drawRope();
   drawBox();
+  drawFurin();
   drawCoin();
   drawParts();
   // vignette
@@ -343,18 +420,30 @@ function ring(){ if(S.state!=='offered'&&S.state!=='done') return;
   S.ropeV=2.6; sfxBell();
   if(S.state==='offered'){ S.state='done'; S.ackT=S.t;
     streak=(lastDay===yestKey)?streak+1:(doneToday?streak:1); lastDay=dayKey; LSset('okage_streak',streak); LSset('okage_last',dayKey);
+    if(streak>0 && streak%7===0 && !doneToday){ omamori++; omamoriNew=true; LSset('okage_omamori',omamori); }
     sfxDrone(); setTimeout(showBlessing,1500); }
   setHint(); }
 function showBlessing(){
   document.getElementById('dbless').textContent='\u201C'+BLESSINGS[blessIdx]+'\u201D';
   document.getElementById('dstreak').textContent='day '+streak+' of your ritual'+(streak>1?' - the cat remembers':'');
+  if(omamori>0){ document.getElementById('domamo').classList.remove('hidden');
+    document.getElementById('domamotx').textContent=omamoriNew?'the cat presses an omamori into your hand':'omamori x '+omamori+' - her protection travels with you'; }
   document.getElementById('done').classList.remove('hidden');
 }
 if(doneToday){ setTimeout(showBlessing,400); }
 
+let wishT=null;
+function showWish(i){
+  const el=document.getElementById('wish');
+  el.textContent='\u201C'+WISHES[i]+'\u201D';
+  el.classList.add('show');
+  if(wishT) clearTimeout(wishT);
+  wishT=setTimeout(()=>el.classList.remove('show'),4600);
+}
 function hit(x,y){
   const r=cv.getBoundingClientRect(), px=(x-r.left)/r.width*W, py=(y-r.top)/r.height*H;
   const cx=W/2, gy=groundY();
+  for(const e of (S.ema||[])){ if(Math.abs(px-e.x)<17 && py>e.y-2 && py<e.y+32){ showWish(e.w); S.ropeV=Math.max(S.ropeV,.5); return; } }
   if(S.state==='arrive'){ if(px>cx-80&&px<cx+80&&py>gy-10&&py<gy+56) offer(); else offer(); }
   else if(S.state==='offered'){ ring(); }
   else { S.ropeV=Math.max(S.ropeV,1.8); sfxBell(); }
@@ -382,6 +471,9 @@ function step(dt){ S.t+=dt;
     if(l.k==='firefly'){ l.y+=l.vy*dt; l.x+=Math.sin(S.t*.9+l.ph)*14*dt; if(l.y<30) l.vy=Math.abs(l.vy)*.6; }
     else { l.y+=l.vy*dt; l.x-=(l.k==='snow'?8:26)*dt+Math.sin(S.t+l.ph)*10*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; }
     if(l.ttl<=0||l.x<-30||l.y>H+20) S.leaves.splice(i,1); }
+  // furin chime on strong gusts
+  if(AC&&!muted){ S.furinT-=dt; if(S.furinT<=0){ S.furinT=6+Math.random()*9;
+    if(S.furinGust>.5){ const f0=2900+Math.random()*900; tone(f0,f0,.5,'sine',.012); tone(f0*1.5,f0*1.5,.4,'sine',.008,.1); } } }
   // crickets
   if(AC&&!muted){ S.chirpT-=dt; if(S.chirpT<=0){ S.chirpT=1.6+Math.random()*2.8; tone(4300,4300,.03,'sine',.004); tone(4600,4600,.03,'sine',.003,.09); } }
 }
@@ -399,7 +491,8 @@ if(qs.get('probe')){
   for(let i=0;i<n;i++) step(1/60);
   if(qs.get('act')==='offer') offer();
   if(qs.get('act')==='ring'){ offer(); ring(); }
-  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,glow:+S.glow.toFixed(2),err:window.__err||''});
+  if(qs.get('act')==='ema'){ draw(); if(S.ema&&S.ema.length){ showWish(S.ema[0].w); window.__wish=S.ema[0].w; } }
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+(qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1).toFixed(3),glow:+S.glow.toFixed(2),err:window.__err||''});
   draw();
 }
 </script>
