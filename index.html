@@ -424,11 +424,21 @@ function drawCat(){
 }
 function drawCoin(){
   if(S.coinT<0) return;
-  const t=Math.min(1,(S.t-S.coinT)*2.1), cx=W/2;
-  const x=cx+ (Math.sin(t*Math.PI)*-30), y=600 - Math.sin(t*Math.PI)*130 - t*110;
-  if(t<1){ ctx.save(); ctx.translate(x,y); ctx.rotate(t*9);
+  const t=(S.t-S.coinT)*2.1, cx=W/2, gy=groundY();
+  if(t<1){ const x=cx+(Math.sin(t*Math.PI)*-30), y=600-Math.sin(t*Math.PI)*130-t*110;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(t*9);
     ctx.fillStyle=GOLD; ctx.beginPath(); ctx.ellipse(0,0,10,8,0,0,7); ctx.fill();
     ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.ellipse(0,0,7,5.4,0,0,7); ctx.stroke(); ctx.restore(); }
+  else if(t<1.7){ // the coin tips into the box
+    const t2=(t-1)/.7;
+    ctx.save(); ctx.translate(cx,490+(gy+34-490)*t2-Math.sin(t2*Math.PI)*7); ctx.rotate(9+t2*2.4);
+    const sc=1-t2*.34;
+    ctx.fillStyle=GOLD; ctx.beginPath(); ctx.ellipse(0,0,10*sc,8*sc,0,0,7); ctx.fill();
+    ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.ellipse(0,0,7*sc,5.4*sc,0,0,7); ctx.stroke(); ctx.restore(); }
+  else if(t<3.2){ // a last gold glint between the slats
+    const gl=Math.max(0,Math.sin((t-1.7)*4.2))*(1-(t-1.7)/1.5);
+    ctx.fillStyle='rgba(232,194,106,'+(.5*gl).toFixed(3)+')';
+    ctx.fillRect(cx-26,gy+14,4,22); ctx.fillRect(cx+9,gy+14,4,22); }
 }
 function drawParts(){
   for(const p of S.parts){ ctx.globalAlpha=Math.max(0,p.ttl*1.6); ctx.fillStyle=p.col; ctx.fillRect(p.x,p.y,p.s,p.s); }
@@ -567,6 +577,7 @@ if(qs.get('probe')){
   if(qs.get('act')==='offer') offer();
   if(qs.get('act')==='ring'){ offer(); ring(); }
   if(qs.get('act')==='ema'){ draw(); if(S.ema&&S.ema.length){ showWish(S.ema[0].w); window.__wish=S.ema[0].w; } }
+  if(qs.get('act')) for(let i=0;i<40;i++) step(1/60);
   document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),rain:+rainK.toFixed(2),glow:+S.glow.toFixed(2),err:window.__err||''});
   draw();
 }
