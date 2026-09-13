@@ -56,6 +56,8 @@ const seedStr=today.getFullYear()+'-'+(today.getMonth()+1)+'-'+today.getDate();
 let seedNum=0; for(const ch of seedStr) seedNum=(seedNum*31+ch.charCodeAt(0))>>>0;
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 let rng=mulberry32(seedNum);
+const SEASON_BY_MONTH=['winter','winter','spring','spring','spring','summer','summer','summer','autumn','autumn','autumn','winter'];
+const season=qs.get('season')||SEASON_BY_MONTH[today.getMonth()];
 document.getElementById('stamp').textContent=today.toLocaleDateString('en-US',{month:'short',day:'numeric'}).toUpperCase()+' - '+'日月火水木金土'[today.getDay()]+'曜日';
 
 const LS=(k,d)=>{ try{ const v=localStorage.getItem(k); return v===null?d:JSON.parse(v); }catch(e){ return d; } };
@@ -171,6 +173,28 @@ function lantern(x,y,s){
   ctx.fillStyle='rgba(232,194,106,'+(.06*fl).toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,4,34,8,0,0,7); ctx.fill(); // ground pool
   ctx.restore();
 }
+function drawEma(){
+  const gy=groundY(), x0=640, x1=752, top=gy-88;
+  const re=mulberry32(seedNum^0x51f3);
+  ctx.lineCap='round';
+  for(const px of [x0,x1]){ ctx.fillStyle='#241b11'; ctx.fillRect(px-3,top-8,6,gy-4-top+8);
+    ctx.fillStyle='rgba(201,150,46,.5)'; ctx.fillRect(px-4,top-11,8,4); }
+  ctx.strokeStyle='#6a5836'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(x0,top); ctx.quadraticCurveTo((x0+x1)/2,top+7,x1,top); ctx.stroke();
+  const n=3+Math.floor(re()*3);
+  for(let i=0;i<n;i++){
+    const ex=x0+14+((x1-x0-28)/(n-1))*i, ey=top+4+Math.sin((i+.5)/n*Math.PI)*6, sw=Math.sin(S.t*1.1+i*1.7)*.06;
+    ctx.save(); ctx.translate(ex,ey); ctx.rotate(sw);
+    ctx.strokeStyle='#6a5836'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,4); ctx.stroke();
+    ctx.fillStyle='#b98a4e'; ctx.beginPath(); ctx.moveTo(-11,4); ctx.lineTo(11,4); ctx.lineTo(11,18); ctx.lineTo(0,26); ctx.lineTo(-11,18); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(20,16,10,.55)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle='rgba(36,27,17,.75)'; ctx.lineWidth=1.1;
+    const marks=1+Math.floor(re()*2);
+    for(let m=0;m<marks;m++){ const mx=-5+re()*10, my=8+re()*8;
+      ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(mx+(re()*4-2),my+2+re()*3); ctx.stroke(); }
+    ctx.restore();
+  }
+}
 function drawShrine(){
   const cx=W/2, gy=groundY();
   // inner glow behind the cat when awake
@@ -277,12 +301,22 @@ function drawCoin(){
 function drawParts(){
   for(const p of S.parts){ ctx.globalAlpha=Math.max(0,p.ttl*1.6); ctx.fillStyle=p.col; ctx.fillRect(p.x,p.y,p.s,p.s); }
   ctx.globalAlpha=1;
-  // autumn leaves
-  for(const l of S.leaves){ ctx.save(); ctx.translate(l.x,l.y); ctx.rotate(Math.sin(S.t*2+l.ph)*.8);
-    ctx.fillStyle='rgba(158,43,30,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,4.6,2.6,0,0,7); ctx.fill(); ctx.restore(); }
+  // seasonal drift: sakura petals / fireflies / maple leaves / snow
+  for(const l of S.leaves){ ctx.save(); ctx.translate(l.x,l.y);
+    if(l.k==='firefly'){ const bl=Math.max(0,Math.sin(S.t*2.4+l.ph));
+      ctx.fillStyle='rgba(214,226,140,'+(.10*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
+      ctx.fillStyle='rgba(242,246,206,'+(.85*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,1.9,0,7); ctx.fill(); }
+    else if(l.k==='snow'){ ctx.fillStyle='rgba(243,240,232,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,1.8,0,7); ctx.fill(); }
+    else if(l.k==='petal'){ ctx.rotate(Math.sin(S.t*2+l.ph)*.9);
+      ctx.fillStyle='rgba(233,184,196,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,4.4,2.6,0,0,7); ctx.fill();
+      ctx.fillStyle='rgba(200,140,152,'+(l.a*.8).toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(1.4,.4,1.8,1.1,0,0,7); ctx.fill(); }
+    else { ctx.rotate(Math.sin(S.t*2+l.ph)*.8);
+      ctx.fillStyle='rgba(158,43,30,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,4.6,2.6,0,0,7); ctx.fill(); }
+    ctx.restore(); }
 }
 function draw(){
   drawSky(); drawGround();
+  drawEma();
   lantern(206,groundY()-4,1.06); lantern(794,groundY()-4,1.06);
   drawShrine();
   drawCat();
@@ -333,18 +367,26 @@ setHint();
 
 // ---------------- loop ----------------
 let last=0;
-function frame(ts){
-  const dt=Math.min(.05,(ts-last)/1000||0); last=ts; S.t+=dt;
+function step(dt){ S.t+=dt;
   // rope physics
   S.ropeV+=(-S.ropeA*14)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
   // acknowledgment glow
   if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8);
   // particles
   for(let i=S.parts.length-1;i>=0;i--){ const p=S.parts[i]; p.ttl-=dt; p.y-=20*dt; if(p.ttl<=0) S.parts.splice(i,1); }
-  if(Math.random()<dt*.5) S.leaves.push({x:W+20,y:-10,vy:22+Math.random()*18,ph:Math.random()*7,a:.4+Math.random()*.3,ttl:16});
-  for(let i=S.leaves.length-1;i>=0;i--){ const l=S.leaves[i]; l.ttl-=dt; l.y+=l.vy*dt; l.x-=(26+Math.sin(S.t+l.ph)*10)*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; if(l.ttl<=0||l.x<-30) S.leaves.splice(i,1); }
+  if(season==='spring' && Math.random()<dt*.6) S.leaves.push({k:'petal',x:W+20,y:-10+Math.random()*120,vy:14+Math.random()*10,ph:Math.random()*7,a:.5+Math.random()*.3,ttl:22});
+  if(season==='autumn' && Math.random()<dt*.5) S.leaves.push({k:'leaf',x:W+20,y:-10,vy:22+Math.random()*18,ph:Math.random()*7,a:.4+Math.random()*.3,ttl:16});
+  if(season==='winter' && Math.random()<dt*1.1) S.leaves.push({k:'snow',x:Math.random()*(W+60)-30,y:-8,vy:20+Math.random()*16,ph:Math.random()*7,a:.5+Math.random()*.35,ttl:26});
+  if(season==='summer' && Math.random()<dt*.35 && S.leaves.length<14) S.leaves.push({k:'firefly',x:60+Math.random()*(W-120),y:groundY()-8-Math.random()*120,vy:-6-Math.random()*7,ph:Math.random()*7,a:1,ttl:12});
+  for(let i=S.leaves.length-1;i>=0;i--){ const l=S.leaves[i]; l.ttl-=dt;
+    if(l.k==='firefly'){ l.y+=l.vy*dt; l.x+=Math.sin(S.t*.9+l.ph)*14*dt; if(l.y<30) l.vy=Math.abs(l.vy)*.6; }
+    else { l.y+=l.vy*dt; l.x-=(l.k==='snow'?8:26)*dt+Math.sin(S.t+l.ph)*10*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; }
+    if(l.ttl<=0||l.x<-30||l.y>H+20) S.leaves.splice(i,1); }
   // crickets
   if(AC&&!muted){ S.chirpT-=dt; if(S.chirpT<=0){ S.chirpT=1.6+Math.random()*2.8; tone(4300,4300,.03,'sine',.004); tone(4600,4600,.03,'sine',.003,.09); } }
+}
+function frame(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0); last=ts; step(dt);
   draw();
   requestAnimationFrame(frame);
 }
@@ -354,12 +396,10 @@ requestAnimationFrame(frame);
 window.onerror=(m,src,l)=>{ window.__err='ERR '+m+' @'+l; };
 if(qs.get('probe')){
   const n=+(qs.get('frames')||120);
-  for(let i=0;i<n;i++){ const dt=1/60; S.t+=dt;
-    S.ropeV+=(-S.ropeA*14)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
-    if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8); }
+  for(let i=0;i<n;i++) step(1/60);
   if(qs.get('act')==='offer') offer();
   if(qs.get('act')==='ring'){ offer(); ring(); }
-  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,glow:+S.glow.toFixed(2),err:window.__err||''});
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,glow:+S.glow.toFixed(2),err:window.__err||''});
   draw();
 }
 </script>
