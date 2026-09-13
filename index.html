@@ -231,6 +231,7 @@ function lantern(x,y,s){
   ctx.beginPath(); ctx.roundRect(-15,-66,30,20,3); ctx.fill();           // firebox
   ctx.beginPath(); ctx.moveTo(-20,-66); ctx.lineTo(20,-66); ctx.lineTo(12,-78); ctx.lineTo(-12,-78); ctx.closePath(); ctx.fill(); // roof
   ctx.beginPath(); ctx.arc(0,-82,3.4,0,7); ctx.fill();                   // jewel
+  if(season==='winter'){ ctx.fillStyle='rgba(243,240,232,.88)'; ctx.beginPath(); ctx.roundRect(-13,-79.5,26,3.4,1.6); ctx.fill(); } // snow on the roof
   const fl=.75+.25*Math.sin(S.t*7+x);
   ctx.fillStyle='rgba(232,194,106,'+(.95*fl).toFixed(3)+')'; ctx.fillRect(-8,-62,16,12); // warm window
   ctx.fillStyle='rgba(255,236,180,'+(.9*fl).toFixed(3)+')'; ctx.fillRect(-3,-58,6,5);      // flame core
@@ -244,7 +245,8 @@ function drawEma(){
   const re=mulberry32(seedNum^0x51f3), wr=mulberry32(seedNum^0x77aa);
   ctx.lineCap='round';
   for(const px of [x0,x1]){ ctx.fillStyle='#241b11'; ctx.fillRect(px-3,top-8,6,gy-4-top+8);
-    ctx.fillStyle='rgba(201,150,46,.5)'; ctx.fillRect(px-4,top-11,8,4); }
+    ctx.fillStyle='rgba(201,150,46,.5)'; ctx.fillRect(px-4,top-11,8,4);
+    if(season==='winter'){ ctx.fillStyle='rgba(243,240,232,.9)'; ctx.beginPath(); ctx.roundRect(px-5,top-14,10,3.6,1.8); ctx.fill(); } }
   ctx.strokeStyle='#6a5836'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(x0,top); ctx.quadraticCurveTo((x0+x1)/2,top+7,x1,top); ctx.stroke();
   const n=3+Math.floor(re()*3);
@@ -302,6 +304,12 @@ function drawShrine(){
   ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2.5;
   ctx.beginPath(); ctx.moveTo(cx-142,gy-182); ctx.lineTo(cx-92,gy-238); ctx.lineTo(cx+92,gy-238); ctx.lineTo(cx+142,gy-182); ctx.stroke();
   ctx.fillStyle=GOLD; ctx.fillRect(cx-3,gy-246,6,10); // ridge crest
+  if(season==='winter'){ // snow settles on the roof
+    ctx.strokeStyle='rgba(243,240,232,.9)'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(cx-140,gy-184); ctx.lineTo(cx-92,gy-237); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+140,gy-184); ctx.lineTo(cx+92,gy-237); ctx.stroke();
+    ctx.fillStyle='rgba(243,240,232,.92)'; ctx.beginPath(); ctx.roundRect(cx-94,gy-242,188,5,2); ctx.fill();
+  }
 }
 function drawFurin(){
   const cx=W/2, gy=groundY();
@@ -325,6 +333,7 @@ function drawBox(){
   ctx.fillStyle='#150f08'; ctx.fillRect(cx-74,gy+6,148,46);
   ctx.fillStyle=WOOD; ctx.fillRect(cx-70,gy,140,46);
   ctx.fillStyle=RED; ctx.fillRect(cx-70,gy,140,5);
+  if(season==='winter'){ ctx.fillStyle='rgba(243,240,232,.9)'; ctx.beginPath(); ctx.roundRect(cx-70,gy-4,140,5.5,2); ctx.fill(); } // snow on the rail
   ctx.fillStyle='#150f08';
   for(let i=0;i<7;i++) ctx.fillRect(cx-58+i*17,gy+8,5,34); // slats
   ctx.strokeStyle='rgba(201,150,46,.4)'; ctx.lineWidth=1.5; ctx.strokeRect(cx-70,gy,140,46);
