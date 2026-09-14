@@ -117,6 +117,17 @@ const WISHES=[
 ];
 const blessIdx=Math.floor(mulberry32(seedNum^0x9e37)()*BLESSINGS.length);
 
+const KANJI=[
+"\u5e78","\u9234","\u7e01","\u540d","\u5f71","\u5b88","\u7fd2","\u6069",
+"\u958b","\u6708","\u6b69","\u706f","\u798f","\u89e3","\u53cb","\u52dd",
+"\u7a4d","\u5fdc","\u97ff","\u4fe1","\u62db","\u5f85","\u660e","\u6e80"
+];
+const kanjiIdx=qs.get('kanji')!=null?Math.max(0,Math.min(23,+qs.get('kanji')||0)):blessIdx;
+// the tanzaku's monthly kigo - one wind-words for each month of the year, inked on the furin's paper strip
+const POEM=['初音','雪解','春風','花風','青嵐','夕立','風鈴','涼風','初風','秋風','木枯','凩'];
+const poemIdx=qs.get('poem')!=null?Math.max(0,Math.min(11,+qs.get('poem')||0)):today.getMonth();
+
+
 // streak
 const dayKey=seedStr;
 const yest=new Date(today); yest.setDate(yest.getDate()-1);
@@ -124,6 +135,7 @@ const yestKey=yest.getFullYear()+'-'+(yest.getMonth()+1)+'-'+yest.getDate();
 let streak=LS('okage_streak',0), lastDay=LS('okage_last','');
 let omamori=LS('okage_omamori',0), omamoriNew=false;
 if(qs.get('streak')){ streak=+qs.get('streak')||0; lastDay=yestKey; } // lever implies an unbroken chain
+if(qs.get('omamori')){ omamori=+qs.get('omamori')||0; omamoriNew=true; }
 const doneToday=(lastDay===dayKey);
 
 // ---------------- canvas ----------------
@@ -134,13 +146,96 @@ addEventListener('resize',resize); resize();
 
 const INK='#12100d', PAPER='#f3ead8', GOLD='#c9962e', GOLDL='#e8c26a', RED='#9e2b1e', WOOD='#3a2a18', WOODD='#241a10';
 
-const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2, furinT:4, furinGust:0 };
+const S={ t:0, state:'arrive', coinT:-1, ringT:-1, ackT:-1, ropeA:0, ropeV:0, glow:0, parts:[], leaves:[], chirpT:2, furinT:4, furinGust:0, emaSw:{}, glintT:-1, wasMoving:false, glanceT:-1, glanceX:0, glanceY:0, slideT:-1, slideCD:-99, slideSide:1, strollT:-1, strollCD:-99, chimeT:-1, firstSnow:true };
+const slidePin=(''+(qs.get('slide')||'')).charAt(0)==='p'?parseFloat(qs.get('slide').slice(1)):-1; // QA: pin the slide at an exact phase
+if(qs.get('slide')!=null&&slidePin<0){ S.slideT=+qs.get('slide')||0; S.slideSide=qs.get('side')==='-1'?-1:1; }
+const strollPin=(''+(qs.get('stroll')||'')).charAt(0)==='p'?parseFloat(qs.get('stroll').slice(1)):-1; // QA: pin the stroll at an exact phase
+if(qs.get('stroll')!=null&&strollPin<0){ S.strollT=+qs.get('stroll')||0; }
+if(qs.get('glow')!=null){ S.glow=+qs.get('glow')||0; }
+const chimePin=(''+(qs.get('chime')||'')).charAt(0)==='p'?parseFloat(qs.get('chime').slice(1)):-1; // QA: pin a chime's age
+if(qs.get('chime')!=null&&chimePin<0){ S.chimeT=+qs.get('chime')||0; }
+if(qs.get('smoke')!=null){ S.state='done'; S.ackT=Math.max(.001,S.t-(+qs.get('smoke')||0)); } // QA: ritual done; bake frames to age the smoke
+const groomPh=mulberry32(seedNum^0x6770)()*53; // the day's grooming moment on a slow 53s cycle
+const groomPin=qs.get('groom')!=null?parseFloat(qs.get('groom')):-1; // QA: pin the wipe at an exact phase
+if(groomPin>=0){ S.state='done'; if(S.ackT<0) S.ackT=.001; }
+const dripPin=qs.get('drip')!=null?parseFloat(qs.get('drip')):-1; // QA: pin the eave drip's phase
+const dripOff=mulberry32(seedNum^0x6d19)();
+// susuki - pampas grass by the path for the moon-viewing season, day-seeded clump
+const susukiOn=qs.get('susuki')!=null?+qs.get('susuki')>0:season==='autumn';
+const susukiStems=[];
+{ const r0=mulberry32(seedNum^0x5055), n=6+Math.floor(r0()*3);
+  for(let i=0;i<n;i++) susukiStems.push({x:78+i*13+r0()*8,h:52+r0()*34,ph:r0()*7,lean:(r0()-.5)*9}); }
+// a moth visits the right lantern on calm, dry nights - seeded per day
+const mothNight=qs.get('moth')!=null?+qs.get('moth')>0:mulberry32(seedNum^0x6a77)()<.6;
+const mothPh=mulberry32(seedNum^0x6a78)()*7;
 // real synodic phase (29.5306d from the 2000-01-06 new moon); fullK ~1 for the nights around full
 function moonPhase(){ return qs.get('moon')!=null?+qs.get('moon'):(((2440587.5+Date.now()/864e5-2451550.26)/29.530588853)%1+1)%1; }
 const MP=moonPhase();
+addEventListener('pointermove',e=>{ const r=document.getElementById('game').getBoundingClientRect(); S.mx=(e.clientX-r.left)*(W/r.width); S.my=(e.clientY-r.top)*(H/r.height); });
 const fullK=Math.min(1,Math.max(0,(((1-Math.cos(2*Math.PI*MP))/2)-.88)/.12));
 // rain nights - seeded by the day, about one in three; ?rain=0..1 forces
 const rainK=qs.get('rain')!=null?+qs.get('rain'):(mulberry32(seedNum^0x42a1)()<.32?.55+mulberry32(seedNum^0x77e1)()*.45:0);
+// a rain-night puddle by the path - mirrors moon and lanterns, rings with the drips
+const puddleOn=qs.get('puddle')!=null?+qs.get('puddle')>0:rainK>.15;
+const ripplePin=qs.get('ripple')!=null?parseFloat(qs.get('ripple')):-1; // QA: pin a ripple ring's phase
+const puddleR=mulberry32(seedNum^0x9dd1);
+const puddleX=300+puddleR()*36, puddlePh=puddleR()*7;
+// higanbana - red spider lilies bloom at the autumn equinox, a cluster by the path's end
+const higanOn=qs.get('higan')!=null?+qs.get('higan')>0:season==='autumn';
+const higanR=mulberry32(seedNum^0x4641);
+const higanStems=[]; { const n=5+Math.floor(higanR()*3);
+  for(let i=0;i<n;i++) higanStems.push({x:848+i*11+higanR()*6,h:26+higanR()*14,ph:higanR()*7}); }
+// the first lily - one pioneer stem by the puddle, only in higan week (the 7 days around the equinox)
+const lilyOn=qs.get('lily')!=null?+qs.get('lily')>0:(higanOn&&today.getMonth()===8&&today.getDate()>=20&&today.getDate()<=26);
+// kinmokusei - a fragrant olive branch enters from the upper left, in bloom for the equinox weeks
+const kinOn=qs.get('kin')!=null?+qs.get('kin')>0:season==='autumn';
+const kinR=mulberry32(seedNum^0x8a3d);
+const kinClusters=[]; { const n=3+Math.floor(kinR()*2);
+  for(let i=0;i<n;i++) kinClusters.push({t:.46+i*(.48/n)+kinR()*.06, ph:kinR()*7, s:.8+kinR()*.5}); }
+const kinPetalR=mulberry32(seedNum^0x8a3e);
+const kinPetal={ph:kinPetalR()*7, cyc:11+kinPetalR()*7, dur:5+kinPetalR()*2};
+// a spider's orb web in the kinmokusei fork - autumn diligence, dew catching the moonlight
+const webOn=qs.get('web')!=null?+qs.get('web')>0:season==='autumn';
+const webR=mulberry32(seedNum^0x7c2f);
+const webDew=[]; for(let i=0;i<6;i++) webDew.push({a:webR()*6.283, r:6+webR()*9, ph:webR()*7});
+// hoshi furu - one shooting star per visit, day-seeded into the night; if she is home she glances up at it
+const shootR=mulberry32(seedNum^0x570a);
+let shootAt=18+shootR()*50; const shootX=140+shootR()*620, shootY=36+shootR()*70, shootDir=shootR()<.5?-1:1;
+const shootPin=qs.get('shoot')!=null?parseFloat(qs.get('shoot')):-1; // QA: pin the streak's age
+S.shootT=-1;
+// a heron crosses the bright moon - one slow pass on the luminous nights, day-seeded
+const heronOn=qs.get('heron')!=null?+qs.get('heron')>0:fullK>.45;
+const heronPin=qs.get('heronage')!=null?parseFloat(qs.get('heronage')):-1; // QA: pin the crossing's age
+const heronR=mulberry32(seedNum^0x3e07);
+const heronT0=5+heronR()*22, heronDY=(heronR()-.5)*56;
+// akatonbo - the red dragonfly of autumn evenings; patrols the yard, perches on a susuki plume and the offering-box corner, and she watches it pass
+const tonboOn=qs.get('tonbo')!=null?+qs.get('tonbo')>0:(season==='autumn'&&rainK<.2&&mulberry32(seedNum^0x70b0)()<.7);
+const tonboPin=qs.get('tonboage')!=null?parseFloat(qs.get('tonboage')):-1; // QA: pin the cycle position
+const tonboR=mulberry32(seedNum^0x70b1);
+const tonboPh=tonboR()*52;
+const tonboSpots=[[116,groundY()-138],[556,groundY()+2]]; // a susuki plume tip, then the box's near corner beside her // a susuki plume tip, then the box corner beside her
+// tsukimi dango - on the full-moon autumn nights a small offering appears by the box
+const dangoOn=qs.get('dango')!=null?+qs.get('dango')>0:(season==='autumn'&&fullK>.5);
+// a maple leaf rides her head for a while on autumn nights - day-seeded when tonight's drifts down
+const leafHeadOn=qs.get('momiji')!=null?+qs.get('momiji')>0:season==='autumn';
+const leafPin=qs.get('leafage')!=null?parseFloat(qs.get('leafage')):-1; // QA: pin the resting leaf's age
+const leafR=mulberry32(seedNum^0x1eaf);
+const leafT0=7+leafR()*16, leafTilt=(leafR()-.5)*.9;
+// the old pond's frog - on rain nights it sits by the puddle and hops now and then
+const frogOn=qs.get('frog')!=null?+qs.get('frog')>0:(puddleOn&&season!=='winter');
+const hopPin=qs.get('hop')!=null?parseFloat(qs.get('hop')):-1; // QA: pin a hop's age
+const frogFR=mulberry32(seedNum^0xf406);
+const frogSpots=[[-64,4],[-30,16],[10,8],[58,2]].map(d=>[puddleX+d[0]+(frogFR()*8-4),groundY()+96+d[1]+(frogFR()*4-2)]);
+// her breath shows on the coldest winter nights - slow warm puffs against the dark, day-seeded rhythm
+const breathOn=qs.get('breath')!=null?+qs.get('breath')>0:(season==='winter'&&mulberry32(seedNum^0xb6e4)()<.65);
+const breathPin=qs.get('breathage')!=null?parseFloat(qs.get('breathage')):-1; // QA: pin the exhale's age
+const breathPh=mulberry32(seedNum^0xb6e5)()*4.2;
+// hatsushimo - the first frost rims the camphor bough on the same coldest nights her breath shows
+const frostOn=qs.get('frost')!=null?+qs.get('frost')>0:(season==='winter'&&mulberry32(seedNum^0xb6e4)()<.65);
+const camR=mulberry32(seedNum^0xca9f);
+const camClusters=[]; { for(let i=0;i<4;i++) camClusters.push({t:.3+i*.21+camR()*.07, ph:camR()*7, s:.85+camR()*.4}); }
+// kadomatsu - pine-and-bamboo at the path for the first seven days of January, welcoming the year in
+const kadoOn=qs.get('kado')!=null?+qs.get('kado')>0:(today.getMonth()===0&&today.getDate()<=7);
 if(doneToday){ S.state='done'; S.glow=1; }
 if(qs.get('stage')==='offered'){ S.state='offered'; }
 if(qs.get('stage')==='done'){ S.state='done'; S.glow=1; setTimeout(showBlessing,600); }
@@ -186,6 +281,15 @@ function drawSky(){
   const rs=mulberry32(413);
   for(let i=0;i<70;i++){ const x=rs()*W, y=rs()*300, tw=.25+.55*Math.abs(Math.sin(S.t*.7+i*2.1));
     ctx.fillStyle='rgba(239,228,200,'+(tw*.5*(1-dk*.75)*(1-rainK*.7)).toFixed(3)+')'; ctx.fillRect(x,y,1.3,1.3); }
+  // hoshi furu - one bright streak, once a night; the rain hides it
+  { const sa=shootPin>=0?shootPin:(S.shootT>=0?S.t-S.shootT:-1);
+    if(sa>=0&&sa<.9){ const k=sa/.9, al=Math.sin(k*Math.PI)*(1-rainK*.7);
+      if(al>.02){ const hx=shootX+shootDir*300*k, hy=shootY+120*k, tl=90;
+        const tg=ctx.createLinearGradient(hx,hy,hx-shootDir*tl,hy-tl*.4);
+        tg.addColorStop(0,'rgba(243,234,216,'+(.8*al).toFixed(3)+')'); tg.addColorStop(1,'rgba(243,234,216,0)');
+        ctx.strokeStyle=tg; ctx.lineWidth=2; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx-shootDir*tl,hy-tl*.4); ctx.stroke();
+        ctx.fillStyle='rgba(243,234,216,'+(.9*al).toFixed(3)+')'; ctx.beginPath(); ctx.arc(hx,hy,2,0,7); ctx.fill(); } } }
   // moon - real phase; silver halo on the full nights
   const mp=MP;
   if(fullK>0){ const halo=ctx.createRadialGradient(778,118,30,778,118,150);
@@ -205,6 +309,22 @@ function drawSky(){
   ctx.restore();
   ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,48,-.6,2.2); ctx.stroke();
   ctx.restore(); ctx.globalAlpha=1;
+  if(heronOn){ // the heron - ink against the moon, slow wingbeats, legs trailing
+    const hAge=heronPin>=0?heronPin:S.t-heronT0;
+    if(hAge>=0&&hAge<8.5){ const hk=hAge/8.5, hx=W+40-(W+110)*hk, hy=118+heronDY+Math.sin(S.t*.8)*5;
+      const wf=Math.sin(S.t*3.1), ink='rgba(16,14,11,'+(.88*(1-dk*.4)).toFixed(3)+')';
+      ctx.save(); ctx.translate(hx,hy);
+      ctx.strokeStyle=ink; ctx.fillStyle=ink; ctx.lineCap='round';
+      ctx.beginPath(); ctx.ellipse(0,0,9,3.4,0,0,7); ctx.fill(); // body
+      ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(7,-1); ctx.quadraticCurveTo(13,-3,17,-1.5); ctx.stroke(); // neck, folded back
+      ctx.beginPath(); ctx.arc(17.5,-1.5,1.9,0,7); ctx.fill(); // head
+      ctx.lineWidth=1.1; ctx.beginPath(); ctx.moveTo(19,-1.5); ctx.lineTo(25,-.6); ctx.stroke(); // beak
+      ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(-8,1.5); ctx.lineTo(-19,4.5); ctx.stroke(); // legs trailing
+      ctx.beginPath(); ctx.moveTo(-8,2.6); ctx.lineTo(-18.4,6.4); ctx.stroke();
+      ctx.lineWidth=3; // broad wings, slow beat
+      ctx.beginPath(); ctx.moveTo(-1,-1); ctx.quadraticCurveTo(-4,-10-8*wf,-13,-13-11*wf); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(1,-1); ctx.quadraticCurveTo(5,-9-7*wf,12,-11-9*wf); ctx.stroke();
+      ctx.restore(); } }
   // drifting clouds
   ctx.fillStyle=rainK>0?'rgba(44,42,40,'+(.35+.3*rainK).toFixed(3)+')':'rgba(60,50,36,.35)';
   for(let i=0;i<4;i++){ const cx=((i*337+S.t*(4+i*1.7))%(W+260))-130, cy=60+i*34;
@@ -222,6 +342,14 @@ function drawGround(){
   for(let i=0;i<5;i++){ const w=66+i*26, x=W/2-w/2+Math.sin(i*9)*8, y=478+i*30;
     ctx.fillStyle='rgba(74,66,54,.9)'; ctx.beginPath(); ctx.roundRect(x,y,w,20,7); ctx.fill();
     ctx.strokeStyle='rgba(20,16,10,.6)'; ctx.lineWidth=1.4; ctx.stroke(); }
+  if(season==='winter'&&streak>3){ // the regulars still come - geta prints pressed in the snow
+    const fr=mulberry32(seedNum^0x3d7);
+    ctx.fillStyle='rgba(20,16,10,.5)';
+    for(let i=0;i<5;i++){ const fy=H-26-i*26, fx=W/2+(i%2?14:-14)+(fr()*6-3), rot=(i%2?1:-1)*.09;
+      ctx.save(); ctx.translate(fx,fy); ctx.rotate(rot);
+      ctx.fillRect(-4.5,-4,3.2,9); ctx.fillRect(1.3,-4,3.2,9); // the two teeth of a geta
+      ctx.restore(); }
+  }
 }
 function lantern(x,y,s){
   ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
@@ -232,9 +360,16 @@ function lantern(x,y,s){
   ctx.beginPath(); ctx.moveTo(-20,-66); ctx.lineTo(20,-66); ctx.lineTo(12,-78); ctx.lineTo(-12,-78); ctx.closePath(); ctx.fill(); // roof
   ctx.beginPath(); ctx.arc(0,-82,3.4,0,7); ctx.fill();                   // jewel
   if(season==='winter'){ ctx.fillStyle='rgba(243,240,232,.88)'; ctx.beginPath(); ctx.roundRect(-13,-79.5,26,3.4,1.6); ctx.fill(); } // snow on the roof
-  const fl=.75+.25*Math.sin(S.t*7+x);
-  ctx.fillStyle='rgba(232,194,106,'+(.95*fl).toFixed(3)+')'; ctx.fillRect(-8,-62,16,12); // warm window
-  ctx.fillStyle='rgba(255,236,180,'+(.9*fl).toFixed(3)+')'; ctx.fillRect(-3,-58,6,5);      // flame core
+  const wnd=S.wind||0;
+  const fl=(.75+.25*Math.sin(S.t*7+x))*(1+Math.abs(wnd)*.28*Math.sin(S.t*13+x)); // gusts worry the flame
+  ctx.fillStyle='rgba(232,194,106,'+(.95*Math.max(0,fl)).toFixed(3)+')'; ctx.fillRect(-8,-62,16,12); // warm window
+  const lean=wnd*4.4+Math.sin(S.t*9+x)*.7; // the flame leans with the night's wind
+  ctx.fillStyle='rgba(255,236,180,'+(.9*Math.max(0,fl)).toFixed(3)+')';
+  ctx.beginPath(); ctx.moveTo(-3,-52.6);
+  ctx.quadraticCurveTo(-3.4,-57,lean*.4-1.4,-58.6);
+  ctx.quadraticCurveTo(lean*.8,-61.6,lean,-63.4);
+  ctx.quadraticCurveTo(1.4+lean*.4,-58.6,3.4,-57);
+  ctx.quadraticCurveTo(3.2,-54,3,-52.6); ctx.closePath(); ctx.fill();      // flame teardrop
   ctx.fillStyle='rgba(232,194,106,'+(.16*fl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,-56,36,0,7); ctx.fill();
   ctx.fillStyle='rgba(232,194,106,'+(.06*fl).toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,4,34,8,0,0,7); ctx.fill(); // ground pool
   ctx.restore();
@@ -251,9 +386,14 @@ function drawEma(){
   ctx.beginPath(); ctx.moveTo(x0,top); ctx.quadraticCurveTo((x0+x1)/2,top+7,x1,top); ctx.stroke();
   const n=3+Math.floor(re()*3);
   for(let i=0;i<n;i++){
-    const ex=x0+14+((x1-x0-28)/(n-1))*i, ey=top+4+Math.sin((i+.5)/n*Math.PI)*6, sw=Math.sin(S.t*1.1+i*1.7)*.06;
-    S.ema.push({x:ex,y:ey,w:Math.floor(wr()*WISHES.length)});
-    ctx.save(); ctx.translate(ex,ey); ctx.rotate(sw);
+    const ex=x0+14+((x1-x0-28)/(n-1))*i, ey=top+4+Math.sin((i+.5)/n*Math.PI)*6;
+    let sw=Math.sin(S.t*1.1+i*1.7)*.06;
+    if(S.strollT>=0){ const sdt=S.t-S.strollT;
+      if(sdt>1.6&&sdt<4.2){ const near=Math.max(0,1-(ex-640)/130);
+        sw+=Math.sin((sdt-1.6)*7.8-i*.7)*.17*near; } } // the rub travels down the cord
+    S.ema.push({x:ex,y:ey,w:Math.floor(wr()*WISHES.length),i:i});
+    const tap=(S.emaSw&&S.emaSw[i])||0;
+    ctx.save(); ctx.translate(ex,ey); ctx.rotate(sw+tap*Math.sin(S.t*6.2+i*1.3));
     ctx.strokeStyle='#6a5836'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,4); ctx.stroke();
     ctx.fillStyle='#b98a4e'; ctx.beginPath(); ctx.moveTo(-11,4); ctx.lineTo(11,4); ctx.lineTo(11,18); ctx.lineTo(0,26); ctx.lineTo(-11,18); ctx.closePath(); ctx.fill();
     ctx.strokeStyle='rgba(20,16,10,.55)'; ctx.lineWidth=1; ctx.stroke();
@@ -283,6 +423,13 @@ function drawEma(){
     if(streak>6){ ctx.fillStyle='rgba(232,194,106,.85)'; ctx.font='9px Georgia'; ctx.textAlign='left';
       ctx.fillText('+'+(streak-6), x1+5, top2+10); }
   }
+  if(rainK>0){ // rain gathers on the plaques, beads at their tips, then lets go
+    ctx.fillStyle='rgba(200,214,228,'+(.55*rainK).toFixed(3)+')';
+    for(let i=0;i<S.ema.length;i++){ const e=S.ema[i];
+      const bx=e.x+((i*7)%5)-2, ph=(S.t*.4+i*.618)%1;
+      if(ph<.7){ ctx.beginPath(); ctx.arc(bx, e.y+26, .7+ph*1.7, 0, 7); ctx.fill(); }
+      else { const dy=(ph-.7)/.3*30; ctx.fillRect(bx-.6, e.y+22+dy, 1.2, 6); } }
+  }
 }
 function drawShrine(){
   const cx=W/2, gy=groundY();
@@ -304,11 +451,50 @@ function drawShrine(){
   ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=2.5;
   ctx.beginPath(); ctx.moveTo(cx-142,gy-182); ctx.lineTo(cx-92,gy-238); ctx.lineTo(cx+92,gy-238); ctx.lineTo(cx+142,gy-182); ctx.stroke();
   ctx.fillStyle=GOLD; ctx.fillRect(cx-3,gy-246,6,10); // ridge crest
+  // earned omamori hang from the right pillar - one pouch per full week of the chain
+  if(omamori>0){
+    const on=Math.min(omamori,5);
+    for(let i=0;i<on;i++){
+      const oy=gy-178+i*22, ox=cx+112;
+      const sw2=Math.sin(S.t*1.3+i*1.9)*.05+(S.wind||0)*.08;
+      const isNew=omamoriNew&&i===on-1;
+      ctx.save(); ctx.translate(ox,oy); ctx.rotate(sw2);
+      if(isNew){ ctx.fillStyle='rgba(232,194,106,.16)'; ctx.beginPath(); ctx.arc(0,12,15,0,7); ctx.fill(); }
+      ctx.strokeStyle='#8a7440'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,5); ctx.stroke();
+      ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.arc(0,6.4,2.2,0,7); ctx.fill(); // knot
+      ctx.fillStyle='#9e2b1e'; ctx.beginPath(); ctx.roundRect(-5.5,8,11,15,3); ctx.fill(); // brocade body
+      ctx.fillStyle='#c9962e'; ctx.fillRect(-5.5,11.4,11,2.4); // gold band
+      ctx.strokeStyle='rgba(20,16,10,.5)'; ctx.lineWidth=.8; ctx.beginPath(); ctx.roundRect(-5.5,8,11,15,3); ctx.stroke();
+      ctx.restore();
+    }
+    if(omamori>5){ ctx.fillStyle='rgba(232,194,106,.85)'; ctx.font='9px Georgia'; ctx.textAlign='left';
+      ctx.fillText('+'+(omamori-5),cx+124,gy-178+4*22+12); }
+  }
   if(season==='winter'){ // snow settles on the roof
     ctx.strokeStyle='rgba(243,240,232,.9)'; ctx.lineWidth=5; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(cx-140,gy-184); ctx.lineTo(cx-92,gy-237); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx+140,gy-184); ctx.lineTo(cx+92,gy-237); ctx.stroke();
     ctx.fillStyle='rgba(243,240,232,.92)'; ctx.beginPath(); ctx.roundRect(cx-94,gy-242,188,5,2); ctx.fill();
+    drawSnowSlide();
+  }
+}
+function drawSnowSlide(){
+  const cx=W/2, gy=groundY();
+  const dt=S.t-S.slideT; if(dt<0||dt>3.4) return;
+  const side=S.slideSide||1;
+  const ex=cx+side*132, ey=gy-190; // just over the downwind eave
+  if(dt<.62){ // the fall - stretches as it drops, tips outward
+    const k=dt/.62;
+    ctx.save(); ctx.translate(ex+side*6*k, ey+(gy-ey+2)*(k*k)); ctx.rotate(side*k*.7);
+    ctx.fillStyle='rgba(243,240,232,'+(.95-k*.1).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(0,0,7-k*1.5,8+k*2,0,0,7); ctx.fill();
+    ctx.restore();
+  } else { // the landing - a soft splat that settles and fades
+    const k=(dt-.62)/2.8;
+    ctx.fillStyle='rgba(243,240,232,'+(.9*(1-k*k)).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(ex+side*6,gy+3,13+k*4,3.2-k*1.1,0,0,7); ctx.fill();
+    for(let i=0;i<3;i++){ const dx=side*(10+i*7+(i%2)*3);
+      ctx.beginPath(); ctx.arc(ex+dx,gy+3-(i%2)*2,1.6-i*.35,0,7); ctx.fill(); }
   }
 }
 function drawFurin(){
@@ -323,9 +509,14 @@ function drawFurin(){
   ctx.fillStyle='rgba(158,43,30,.5)'; ctx.beginPath(); ctx.ellipse(2,20,4,2.6,.5,0,7); ctx.fill(); // kingyo motif
   ctx.strokeStyle='rgba(36,27,17,.8)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,26); ctx.lineTo(0,34); ctx.stroke();
   ctx.save(); ctx.rotate(gust*.5); // the strip catches more wind than the glass
-  ctx.fillStyle='#f3ead8'; ctx.fillRect(-4,34,8,26);
-  ctx.strokeStyle='rgba(20,16,10,.4)'; ctx.strokeRect(-4,34,8,26);
-  ctx.fillStyle='#9e2b1e'; ctx.fillRect(-4,34,8,3);
+  ctx.fillStyle='#f3ead8'; ctx.fillRect(-5,34,10,28);
+  ctx.strokeStyle='rgba(20,16,10,.4)'; ctx.strokeRect(-5,34,10,28);
+  ctx.fillStyle='#9e2b1e'; ctx.fillRect(-5,34,10,3);
+  ctx.fillStyle='rgba(18,16,13,.82)'; // the month's kigo, brushed down the tanzaku - one wind-word a month
+  const pm=POEM[poemIdx], fs=pm.length>2?7.5:9.5, y0=pm.length>2?40:44.5;
+  ctx.font=fs+'px "Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Droid Sans Fallback",serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(let i=0;i<pm.length;i++) ctx.fillText(pm[i],0,y0+i*(fs+1.2));
   ctx.restore(); ctx.restore();
 }
 function drawBox(){
@@ -344,6 +535,18 @@ function drawBox(){
     for(const dp of [[-9,-10],[9,-10],[0,-19]]){ ctx.beginPath(); ctx.arc(tx+dp[0],ty+dp[1],7,0,7); ctx.fill(); }
     ctx.fillStyle='rgba(214,224,240,.4)'; // moonlight catching the dumplings
     for(const dp of [[-11,-12],[7,-12],[-2,-21]]){ ctx.beginPath(); ctx.arc(tx+dp[0],ty+dp[1],2.2,0,7); ctx.fill(); }
+    // tsukimi bench - someone has come to sit with the moon
+    const bx=296, by=gy+50;
+    ctx.fillStyle='#241b11'; ctx.fillRect(bx-40,by-16,8,26); ctx.fillRect(bx+32,by-16,8,26); // legs
+    ctx.fillStyle=WOOD; ctx.beginPath(); ctx.roundRect(bx-50,by-22,100,9,3); ctx.fill(); // plank
+    ctx.fillStyle='rgba(201,150,46,.38)'; ctx.fillRect(bx-50,by-22,100,2); // worn edge
+    ctx.fillStyle='#7a1f16'; ctx.beginPath(); ctx.ellipse(bx-14,by-24,18,5.6,0,0,7); ctx.fill(); // zabuton
+    ctx.strokeStyle='rgba(20,16,10,.5)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.roundRect(bx+16,by-34,12,11,2); ctx.fill(); // tea
+    ctx.fillStyle='#6a5836'; ctx.fillRect(bx+16,by-34,12,3);
+    const stw=Math.sin(S.t*1.2)*2.2;
+    ctx.strokeStyle='rgba(226,232,240,'+(.32*fullK).toFixed(3)+')'; ctx.lineWidth=1.1;
+    ctx.beginPath(); ctx.moveTo(bx+22,by-36); ctx.quadraticCurveTo(bx+22+stw,by-46,bx+22-stw,by-56); ctx.stroke();
   }
 }
 function drawRope(){
@@ -356,21 +559,32 @@ function drawRope(){
   ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.4; for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(i*5.4,-13); ctx.lineTo(i*5.4,13); ctx.stroke(); }
   ctx.fillStyle=RED; ctx.fillRect(-15,-3,30,5);
   ctx.fillStyle='#2c2620'; ctx.beginPath(); ctx.arc(0,15,3,0,7); ctx.fill();
+  if(S.glintT>=0){ const gt=S.t-S.glintT;
+    if(gt>=0&&gt<1.1){ const gx=-11+22*(gt/1.1), ga=Math.sin(gt/1.1*Math.PI);
+      ctx.fillStyle='rgba(255,244,214,'+(.9*ga).toFixed(3)+')';
+      ctx.beginPath();
+      ctx.moveTo(gx,-9); ctx.lineTo(gx+1.6,-4.6); ctx.lineTo(gx+6,-3); ctx.lineTo(gx+1.6,-1.4);
+      ctx.lineTo(gx,3); ctx.lineTo(gx-1.6,-1.4); ctx.lineTo(gx-6,-3); ctx.lineTo(gx-1.6,-4.6);
+      ctx.closePath(); ctx.fill(); } }
   ctx.restore();
 }
 function drawCat(){
   const cx=W/2, gy=groundY()-28, s=1.05;
   ctx.save(); ctx.translate(cx+26,gy); ctx.scale(s,s);
+  const gg=S.groomG||0, ge=(S.groomG>=0&&gg<4.5)?Math.sin(gg/4.5*Math.PI):0; // groom envelope, smooth in/out
+  if(ge>0){ ctx.rotate(-.045*ge); ctx.translate(2.2*ge,1.6*ge); } // she leans into the wipe
   const awake=S.glow>.5, nod=S.ackT>=0?Math.min(1,(S.t-S.ackT)*1.4):0;
   const wave=awake?Math.sin(S.t*2.6)*.16:0;
   const breath=1+.022*Math.sin(S.t*1.4);
   const tc=S.t%5.2, twitch=tc<.42?Math.sin(tc/.42*Math.PI*3)*.13:0; // left ear, every ~5s
+  const perk=(!awake&&S.chimeT>=0&&S.t-S.chimeT<1.2)?Math.sin((S.t-S.chimeT)/1.2*Math.PI)*.22:0; // asleep, she still hears the chime
   const blink=awake&&(S.t%4.3)<.13;
   const tailSw=Math.sin(S.t*1.1)*5;
+  const curl=season==='winter'?1:0; // winter nights: she keeps her tail close
   ctx.lineJoin='round';
-  // tail curled right
+  // tail curled right - hugging the haunch in winter
   ctx.strokeStyle='#ece0c4'; ctx.lineWidth=13; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(38,-16); ctx.quadraticCurveTo(60+tailSw,-18,54+tailSw,-48); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(38,-16); ctx.quadraticCurveTo(60+tailSw-curl*22,-18+curl*4,54+tailSw-curl*17,-48+curl*11); ctx.stroke();
   // haunched body
   ctx.fillStyle='#f3ead8';
   ctx.beginPath(); ctx.ellipse(0,-34,44,38*breath,0,0,7); ctx.fill();
@@ -381,26 +595,51 @@ function drawCat(){
   ctx.strokeStyle=RED; ctx.lineWidth=7; ctx.beginPath(); ctx.arc(0,-72,24,.35,2.79); ctx.stroke();
   ctx.fillStyle=GOLD; ctx.beginPath(); ctx.arc(0,-50,6.4,0,7); ctx.fill();
   ctx.fillStyle='#7a5a14'; ctx.fillRect(-4,-52,8,2.4);
-  // head
+  // right paw raised - beckons once awake
+  ctx.save(); ctx.translate(31,-73); ctx.rotate(awake?(-.34+wave-.38*ge):(-.18-.3*ge)); // the paw lowers as she grooms
+  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.roundRect(-9,-40,18,44,9); ctx.fill();
+  ctx.fillStyle='#e09a8a'; ctx.beginPath(); ctx.arc(0,-32,4.6,0,7); ctx.fill();
+  ctx.restore();
+  // head (over the raised paw)
   ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.arc(0,-102,32,0,7); ctx.fill();
   // ears
-  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-twitch); ctx.translate(22,124);
+  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-(twitch+perk)); ctx.translate(22,124);
   ctx.beginPath(); ctx.moveTo(-26,-120); ctx.lineTo(-33,-148); ctx.lineTo(-8,-132); ctx.closePath(); ctx.fill();
   ctx.restore();
   ctx.beginPath(); ctx.moveTo(26,-120); ctx.lineTo(33,-148); ctx.lineTo(8,-132); ctx.closePath(); ctx.fill();
   ctx.fillStyle=RED;
-  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-twitch); ctx.translate(22,124);
+  ctx.save(); ctx.translate(-22,-124); ctx.rotate(-(twitch+perk)); ctx.translate(22,124);
   ctx.beginPath(); ctx.moveTo(-24,-124); ctx.lineTo(-28,-141); ctx.lineTo(-13,-131); ctx.closePath(); ctx.fill();
   ctx.restore();
   ctx.beginPath(); ctx.moveTo(24,-124); ctx.lineTo(28,-141); ctx.lineTo(13,-131); ctx.closePath(); ctx.fill();
+  // tonight's maple leaf, resting between her ears
+  if(S.leafSt===0||S.leafSt===1){
+    let lx=-6, ly=-131, rot=leafTilt, la=1;
+    if(S.leafSt===0){ const k=Math.min(1,(S.t-S.leafT)/2.6); // drifting down out of the dark
+      lx=-6+Math.sin(S.t*3.1)*30*(1-k); ly=-131-150*(1-k)*(1-k)+Math.sin(S.t*2.3)*9*(1-k); rot=leafTilt+Math.sin(S.t*4.2)*1.1*(1-k); la=Math.min(1,k*2.5+.2); }
+    ctx.save(); ctx.translate(lx,ly); ctx.rotate(rot);
+    ctx.fillStyle='rgba(158,43,30,'+(.92*la).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(0,0,6.6,3.6,0,0,7); ctx.fill(); // blade
+    ctx.beginPath(); ctx.ellipse(-3.4,-2.2,3.4,1.9,-.7,0,7); ctx.fill(); // lobes
+    ctx.beginPath(); ctx.ellipse(3.4,-2.2,3.4,1.9,.7,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(120,30,20,'+(.8*la).toFixed(3)+')'; ctx.lineWidth=1.1;
+    ctx.beginPath(); ctx.moveTo(0,2.6); ctx.lineTo(1.2,7.2); ctx.stroke(); // stem
+    ctx.restore(); }
   // face
   ctx.strokeStyle='#2c2620'; ctx.lineWidth=2.6; ctx.lineCap='round';
-  if(blink){
+  if(blink||ge>.3){ // eyes close for the wipe
     ctx.beginPath(); ctx.arc(-12,-104,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
     ctx.beginPath(); ctx.arc(12,-104,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
   } else if(awake){ ctx.fillStyle='#2c2620';
-    ctx.beginPath(); ctx.arc(-12,-104,3.2,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12,-104,3.2,0,7); ctx.fill();
-    ctx.fillStyle='rgba(243,234,216,.9)'; ctx.beginPath(); ctx.arc(-11,-105,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(13,-105,1,0,7); ctx.fill();
+    let lx=0, ly=0;
+    const pv=qs.get('look'); let px2=S.mx, py2=S.my;
+    if(pv){ const pa=pv.split(','); px2=+pa[0]; py2=+pa[1]; }
+    if(S.glanceT>=0&&S.t-S.glanceT<2.4){ px2=S.glanceX; py2=S.glanceY; }
+    else if(S.chimeT>=0&&S.t-S.chimeT<2.2){ px2=W/2-118; py2=groundY()-186+18; } // the bell that just sang
+    if(px2!=null){ const hx=W/2+26, hy=groundY()-28-104;
+      const ang=Math.atan2(py2-hy,px2-hx); lx=Math.cos(ang)*1.7; ly=Math.sin(ang)*1.2; }
+    ctx.beginPath(); ctx.arc(-12+lx,-104+ly,3.2,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12+lx,-104+ly,3.2,0,7); ctx.fill();
+    ctx.fillStyle='rgba(243,234,216,.9)'; ctx.beginPath(); ctx.arc(-11+lx,-105+ly,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(13+lx,-105+ly,1,0,7); ctx.fill();
   } else {
     ctx.beginPath(); ctx.arc(-12,-106,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
     ctx.beginPath(); ctx.arc(12,-106,5,.15*Math.PI,.85*Math.PI); ctx.stroke();
@@ -415,11 +654,57 @@ function drawCat(){
   ctx.strokeStyle='#7a5a14'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.ellipse(0,0,13,9.4,0,0,7); ctx.stroke();
   ctx.fillStyle='#7a5a14'; ctx.font='bold 10px Georgia'; ctx.textAlign='center'; ctx.fillText('福',0,3.5);
   ctx.restore();
-  // right paw raised - beckons once awake
-  ctx.save(); ctx.translate(24,-76); ctx.rotate(awake?(-.5+wave):-.18);
-  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.roundRect(-9,-40,18,44,9); ctx.fill();
-  ctx.fillStyle='#e09a8a'; ctx.beginPath(); ctx.arc(0,-32,4.6,0,7); ctx.fill();
+  if(ge>.05){ // the wiping paw unfolds from her chest onto her cheek
+    const wb=Math.sin(S.t*5.5)*.085*ge;
+    ctx.save(); ctx.translate(22,-52); ctx.rotate(.05+.17*ge+wb); ctx.scale(1,.3+.7*ge);
+    ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.roundRect(-8,-40,16,44,8); ctx.fill();
+    ctx.fillStyle='#e09a8a'; ctx.beginPath(); ctx.arc(0,-32,3.8,0,7); ctx.fill();
+    ctx.restore(); }
   ctx.restore();
+}
+function drawStrollCat(){
+  const gy=groundY()-28, cx=W/2; // she keeps to the platform - the rack's left post is in reach
+  const home=cx+26, standX=640-42;
+  const dt=S.t-S.strollT, ph=S.t*7;
+  let x, mode, dir=1;
+  if(dt<1.6){ const k=dt/1.6, e=k*k*(3-2*k); x=home+(standX-home)*e; mode='walk'; }
+  else if(dt<4.2){ x=standX; mode='rub'; }
+  else { const k=Math.min(1,(dt-4.2)/1.6), e=k*k*(3-2*k); x=standX+(home-standX)*e; mode='walk'; dir=-1; }
+  const rubK=mode==='rub'?Math.sin((dt-1.6)*7.8):0;
+  ctx.save(); ctx.translate(x,gy); if(dir<0) ctx.scale(-1,1);
+  ctx.lineJoin='round';
+  if(mode==='walk') ctx.translate(0,-Math.abs(Math.sin(ph))*1.7);
+  // tail carried high, quivering while she rubs
+  ctx.strokeStyle='#ece0c4'; ctx.lineWidth=12; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-34,-24);
+  ctx.quadraticCurveTo(-52,-30,-50+Math.sin(S.t*2.2)*3,-58-(mode==='rub'?Math.abs(rubK)*4:Math.abs(Math.sin(ph*.5))*3)); ctx.stroke();
+  // legs first so the body laps them - pairs stepping in offset phase
+  ctx.fillStyle='#f3ead8';
+  for(const [lx,off] of [[-22,0],[-14,Math.PI],[16,Math.PI*.9],[26,Math.PI*1.9]]){
+    const lift=mode==='walk'?Math.max(0,Math.sin(ph+off))*3:0, sw2=mode==='walk'?Math.sin(ph+off)*.09:0;
+    ctx.save(); ctx.translate(lx,-12); ctx.rotate(sw2);
+    ctx.beginPath(); ctx.roundRect(-3.4,0,6.8,14-lift,3.4); ctx.fill();
+    ctx.restore(); }
+  // standing body
+  ctx.beginPath(); ctx.ellipse(0,-26,40,22,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(24,-34,18,17,0,0,7); ctx.fill(); // chest
+  ctx.fillStyle='rgba(190,168,130,.35)'; ctx.beginPath(); ctx.ellipse(-12,-22,22,14,0,0,7); ctx.fill();
+  // collar + bell
+  ctx.strokeStyle=RED; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(30,-38,12,.4,2.6); ctx.stroke();
+  ctx.fillStyle=GOLD; ctx.beginPath(); ctx.arc(33,-27,4.6,0,7); ctx.fill();
+  ctx.fillStyle='#7a5a14'; ctx.fillRect(30.4,-28.6,5,1.8);
+  // head - dips to press her cheek to the post
+  const hx=44+(mode==='rub'?2.5+rubK*2:0), hy=-46+(mode==='rub'?Math.abs(rubK)*3.5:Math.sin(ph*.5)*1.2);
+  ctx.fillStyle='#f3ead8'; ctx.beginPath(); ctx.arc(hx,hy,19,0,7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx-14,hy-12); ctx.lineTo(hx-18,hy-28); ctx.lineTo(hx-4,hy-18); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx+14,hy-12); ctx.lineTo(hx+18,hy-28); ctx.lineTo(hx+4,hy-18); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=RED;
+  ctx.beginPath(); ctx.moveTo(hx-13,hy-14); ctx.lineTo(hx-15.5,hy-24); ctx.lineTo(hx-6,hy-17); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx+13,hy-14); ctx.lineTo(hx+15.5,hy-24); ctx.lineTo(hx+6,hy-17); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#2c2620'; ctx.lineWidth=2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(hx-7,hy-2,4,.15*Math.PI,.85*Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(hx+7,hy-2,4,.15*Math.PI,.85*Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx-2,hy+5); ctx.lineTo(hx+2,hy+5); ctx.lineTo(hx,hy+7.6); ctx.closePath(); ctx.fillStyle='#c9755a'; ctx.fill();
   ctx.restore();
 }
 function drawCoin(){
@@ -440,6 +725,264 @@ function drawCoin(){
     ctx.fillStyle='rgba(232,194,106,'+(.5*gl).toFixed(3)+')';
     ctx.fillRect(cx-26,gy+14,4,22); ctx.fillRect(cx+9,gy+14,4,22); }
 }
+function drawSmoke(){ // okage v30 - once the ritual is done, incense burns beside the box
+  if(S.state!=='done') return;
+  const age=S.ackT>=0?S.t-S.ackT:S.t+40; // returning visitors find it already lit
+  const fade=Math.min(1,age/3);
+  if(fade<=0) return;
+  const bx=W/2-96, by=groundY()+52; // a small clay censer on the ground, left of the box
+  ctx.fillStyle='#151009'; ctx.beginPath(); ctx.ellipse(bx,by+.6,8.4,2.2,0,0,7); ctx.fill(); // ground shadow
+  ctx.fillStyle='#2c2115'; ctx.beginPath(); ctx.ellipse(bx,by-4,7,4.8,0,0,7); ctx.fill();     // the bowl
+  ctx.fillStyle='#181109'; ctx.fillRect(bx-2.2,by-1.6,4.4,2.2);                              // foot
+  ctx.strokeStyle='rgba(201,150,46,.5)'; ctx.lineWidth=.9;
+  ctx.beginPath(); ctx.ellipse(bx,by-6.2,5.4,2.2,0,0,7); ctx.stroke();                       // rim
+  const em=.55+.45*Math.sin(S.t*9+bx); // the ember breathes
+  ctx.fillStyle='rgba(255,226,150,'+(.85*em*fade).toFixed(3)+')';
+  ctx.beginPath(); ctx.arc(bx,by-7.6,1.4,0,7); ctx.fill();
+  // the smoke: one thin wisp, curling on a day-seeded phase, bent by the night's wind, thinned by rain
+  const ph=mulberry32(seedNum^0x6605)()*7, N=7, st=13;
+  const pts=[[bx,by-9]];
+  for(let i=1;i<=N;i++){
+    const curl=Math.sin(i*.85-S.t*1.05+ph)*(1.5+i*1.9);
+    const bend=(S.wind||0)*i*i*.9;
+    pts.push([bx+curl+bend, by-9-i*st]);
+  }
+  const a0=.24*fade*(1-rainK*.45);
+  ctx.lineCap='round';
+  for(let pass=0;pass<2;pass++){ // a soft halo pass under a thin bright core
+    for(let i=0;i<N;i++){
+      const k=1-i/N;
+      ctx.strokeStyle=pass===0?'rgba(208,204,194,'+(a0*.45*k).toFixed(3)+')':'rgba(228,224,214,'+(a0*k).toFixed(3)+')';
+      ctx.lineWidth=pass===0?(4.6-2.6*i/N):(1.8-1.1*i/N);
+      ctx.beginPath(); ctx.moveTo(pts[i][0],pts[i][1]); ctx.lineTo(pts[i+1][0],pts[i+1][1]); ctx.stroke();
+    }
+  }
+}
+function drawDango(){ // moon-viewing offering: a lacquer tray, three dango, a sprig of susuki
+  const gy=groundY(), x=612, y=gy-4;
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle='rgba(30,22,16,.95)'; ctx.beginPath(); ctx.roundRect(-15,-3,30,4.5,1.5); ctx.fill(); // tray
+  ctx.fillRect(-11,1.5,3,2.5); ctx.fillRect(8,1.5,3,2.5); // feet
+  const gl=.88+.12*fullK; // moonlit rice
+  for(const d of [[-5.5,-8.5],[5.5,-8.5],[0,-15.5]]){
+    ctx.fillStyle='rgba(60,52,40,.5)'; ctx.beginPath(); ctx.arc(d[0]+.8,d[1]+1,4.4,0,7); ctx.fill(); // shadow side
+    ctx.fillStyle='rgba(246,240,226,'+gl.toFixed(3)+')'; ctx.beginPath(); ctx.arc(d[0],d[1],4.3,0,7); ctx.fill(); }
+  ctx.strokeStyle='rgba(233,224,199,.5)'; ctx.lineWidth=1; // a sprig of grass from the tray's edge
+  ctx.beginPath(); ctx.moveTo(13,-2); ctx.quadraticCurveTo(16,-10,14,-16); ctx.stroke();
+  ctx.restore();
+}
+function drawHigan(){ // equinox lilies - bare stems, spidery red umbels, no leaves (higan: they part from their leaves)
+  const gy=groundY(), wnd=(S.wind||0);
+  ctx.lineCap='round';
+  for(const s of higanStems){
+    const bend=wnd*s.h*.16+Math.sin(S.t*1.1+s.ph)*1.2;
+    const tx=s.x+bend, ty=gy+4-s.h;
+    ctx.strokeStyle='rgba(52,62,44,.9)'; ctx.lineWidth=1.3;
+    ctx.beginPath(); ctx.moveTo(s.x,gy+4); ctx.quadraticCurveTo(s.x+bend*.4,gy+4-s.h*.55,tx,ty); ctx.stroke();
+    for(let p=0;p<8;p++){ const ang=-Math.PI/2+(p-3.5)*.42+Math.sin(S.t*1.4+s.ph+p)*.05;
+      const L=5.5+1.8*Math.sin(s.ph+p*2.1);
+      ctx.strokeStyle='rgba(158,43,30,'+(.8+.15*Math.sin(s.ph+p)).toFixed(3)+')'; ctx.lineWidth=.9;
+      ctx.beginPath(); ctx.moveTo(tx,ty);
+      ctx.quadraticCurveTo(tx+Math.cos(ang)*L*.7,ty+Math.sin(ang)*L*.7,tx+Math.cos(ang)*L+Math.sin(ang)*2.2,ty+Math.sin(ang)*L-Math.cos(ang)*2.2); ctx.stroke(); }
+    ctx.fillStyle='rgba(206,110,46,.8)'; ctx.beginPath(); ctx.arc(tx,ty,1.3,0,7); ctx.fill(); }
+}
+function drawFrog(){ // Basho's frog by the old pond - still, then a hop, then still again
+  const age=S.hopT>=0?S.t-S.hopT:-1;
+  let fx,fy,sq=1;
+  const sp=frogSpots[S.frogSpot||0];
+  if(age>=0&&age<.6){ const a=frogSpots[S.hopFrom||0], k=age/.6;
+    fx=a[0]+(sp[0]-a[0])*k; fy=a[1]+(sp[1]-a[1])*k-Math.sin(k*Math.PI)*22; sq=1-.18*Math.sin(k*Math.PI); }
+  else { fx=sp[0]; fy=sp[1]; if(age>=.6&&age<.9) sq=.86; }
+  fy+=1.5; const br=1+.035*Math.sin(S.t*2.2);
+  ctx.save(); ctx.translate(fx,fy); ctx.scale(1,sq*br);
+  ctx.fillStyle='rgba(32,38,28,.95)';
+  ctx.beginPath(); ctx.ellipse(0,-4,8.5,5.6,0,0,7); ctx.fill(); // body
+  ctx.beginPath(); ctx.ellipse(5.5,-7.5,4,3.4,0,0,7); ctx.fill(); // head
+  ctx.strokeStyle='rgba(233,214,170,'+(.16+.05*Math.sin(S.t*1.1)).toFixed(3)+')'; ctx.lineWidth=1.1; // lantern rim on the wet back
+  ctx.beginPath(); ctx.ellipse(0,-4,8.5,5.6,0,Math.PI*1.15,Math.PI*1.85); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(5.5,-7.5,4,3.4,0,Math.PI*1.2,Math.PI*1.8); ctx.stroke();
+  ctx.fillStyle='rgba(233,224,199,'+(.4+.2*Math.sin(S.t*.8)).toFixed(3)+')';
+  ctx.beginPath(); ctx.arc(4.6,-9.6,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(7.4,-9.2,.9,0,7); ctx.fill(); // eye glints
+  ctx.restore();
+  for(const s of (S.frogSplashes||[])){ const k=(S.t-s.t)/1.2; // the sound of water
+    ctx.strokeStyle='rgba(200,214,228,'+(.22*(1-k)*Math.max(rainK,.4)).toFixed(3)+')'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.ellipse(s.x,s.y,4+k*26,(4+k*26)*.22,0,0,7); ctx.stroke(); }
+}
+function drawLilyStem(){ // one bare stem at the puddle's rim - the season's first, ahead of the cluster
+  const gy=groundY(), wnd=(S.wind||0), bx=puddleX+38, by=gy+103, h=30;
+  const bend=wnd*h*.16+Math.sin(S.t*1.1+2.4)*1.2;
+  const tx=bx+bend, ty=by-h;
+  ctx.lineCap='round';
+  ctx.strokeStyle='rgba(52,62,44,.9)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(bx+bend*.4,by-h*.55,tx,ty); ctx.stroke();
+  for(let p=0;p<7;p++){ const ang=-Math.PI/2+(p-3)*.44+Math.sin(S.t*1.4+2.4+p)*.05;
+    const L=5+1.6*Math.sin(2.4+p*2.1);
+    ctx.strokeStyle='rgba(158,43,30,'+(.82+.14*Math.sin(2.4+p)).toFixed(3)+')'; ctx.lineWidth=.9;
+    ctx.beginPath(); ctx.moveTo(tx,ty);
+    ctx.quadraticCurveTo(tx+Math.cos(ang)*L*.7,ty+Math.sin(ang)*L*.7,tx+Math.cos(ang)*L+Math.sin(ang)*2.2,ty+Math.sin(ang)*L-Math.cos(ang)*2.2); ctx.stroke(); }
+  ctx.fillStyle='rgba(206,110,46,.8)'; ctx.beginPath(); ctx.arc(tx,ty,1.2,0,7); ctx.fill();
+}
+function drawPuddle(){ // rain nights: a still mirror by the path catching moon, flame, and drip rings
+  const gy=groundY(), px=puddleX, py=gy+96, wnd=(S.wind||0);
+  ctx.save();
+  ctx.fillStyle='rgba(34,40,54,'+(.42*rainK).toFixed(3)+')'; // wet sheen, bluer than the earth
+  ctx.beginPath(); ctx.ellipse(px,py,48,9.5,0,0,7); ctx.fill();
+  const litK=(1-Math.cos(2*Math.PI*MP))/2; // how lit the moon is tonight
+  if(litK>.12){ ctx.strokeStyle='rgba(224,232,244,'+(.10*litK*rainK).toFixed(3)+')'; ctx.lineWidth=1.6; ctx.lineCap='round';
+    for(let i=0;i<4;i++){ const sx=px+14+i*3.4+Math.sin(S.t*1.1+i+puddlePh)*1.6+wnd*2, sy=py-5+i*2.8;
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+7+i,sy+.8); ctx.stroke(); } }
+  ctx.fillStyle='rgba(233,180,80,'+(.10*rainK*(.7+.3*Math.sin(S.t*9))).toFixed(3)+')'; // lantern flames, smeared
+  ctx.beginPath(); ctx.ellipse(px-26,py+1.5,5,1.6,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+30,py-1,4,1.4,0,0,7); ctx.fill();
+  if(lilyOn){ const wob=Math.sin(S.t*1.3+puddlePh); // the first lily, reflected - a red smear at the mirror's edge
+    for(let i=0;i<5;i++){ const a=-.5+i*.25+wob*.06;
+      ctx.strokeStyle='rgba(178,60,40,'+((.20+.05*Math.sin(S.t*2+i))*rainK).toFixed(3)+')'; ctx.lineWidth=1.1; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(px+30,py-1);
+      ctx.quadraticCurveTo(px+30+Math.cos(a)*3.5,py-1+Math.sin(a)*1.4,px+30+Math.cos(a)*6.5+wob*.8,py-1+Math.sin(a)*2.6); ctx.stroke(); } }
+  for(let i=0;i<2;i++){ const k=((ripplePin>=0?ripplePin:(S.t*.5+puddlePh)) + i*.5)%1; // drip rings, expanding
+    ctx.strokeStyle='rgba(200,214,228,'+(.16*(1-k)*rainK).toFixed(3)+')'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.ellipse(px-8+i*16,py,6+k*34,(6+k*34)*.22,0,0,7); ctx.stroke(); }
+  ctx.restore();
+}
+function drawCamphor(){ // evergreen camphor from the upper right; on frost nights each leaf wears a pale rim on its cold edge
+  const wnd=S.wind||0;
+  const P=t=>[(1-t)*(1-t)*1020+2*t*(1-t)*930+t*t*782, (1-t)*(1-t)*58+2*t*(1-t)*100+t*t*142];
+  ctx.save();
+  ctx.strokeStyle='rgba(34,30,24,.92)'; ctx.lineCap='round'; ctx.lineWidth=4.6;
+  ctx.beginPath(); ctx.moveTo(1020,58); ctx.quadraticCurveTo(930,100,782,142); ctx.stroke();
+  ctx.lineWidth=2.2;
+  for(const c of camClusters){ const p=P(c.t);
+    ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.quadraticCurveTo(p[0]-12,p[1]+12,p[0]-22,p[1]+24); ctx.stroke(); }
+  for(const c of camClusters){ const p=P(c.t); const fl=Math.sin(S.t*1.2+c.ph)*(.5+wnd*1.6);
+    for(let l=0;l<5;l++){ const ang=l*1.55+c.ph+fl*.05, lx=p[0]-4-Math.cos(ang)*(9+l*3.4)*c.s, ly=p[1]+6+Math.sin(ang)*(7+l*2.6)*c.s;
+      ctx.save(); ctx.translate(lx,ly); ctx.rotate(-ang*.45+fl*.1);
+      ctx.fillStyle='rgba(36,52,42,.96)'; ctx.beginPath(); ctx.ellipse(0,0,8.6,3.8,0,0,7); ctx.fill();
+      ctx.fillStyle='rgba(58,76,58,.45)'; ctx.beginPath(); ctx.ellipse(1,-.7,5,1.7,0,0,7); ctx.fill();
+      ctx.strokeStyle='rgba(228,238,246,'+(.42+.1*Math.sin(S.t*.9+c.ph+l)).toFixed(3)+')'; ctx.lineWidth=.9; // the frost, on the edge that faces the sky
+      ctx.beginPath(); ctx.ellipse(0,-.4,8.2,3.5,0,Math.PI*1.06,Math.PI*1.94); ctx.stroke();
+      if(l%2===0){ ctx.fillStyle='rgba(238,246,250,.5)'; ctx.beginPath(); ctx.arc(-7.4,-1.2,.7,0,7); ctx.fill(); }
+      ctx.restore(); } }
+  ctx.restore(); }
+function drawKin(){ // fragrant olive - dark waxy leaves, tiny four-dot orange blossoms at the axils, one petal drifting down
+  const wnd=S.wind||0;
+  const P=t=>[(1-t)*(1-t)*-20+2*t*(1-t)*100+t*t*248, (1-t)*(1-t)*46+2*t*(1-t)*92+t*t*128];
+  ctx.save();
+  ctx.strokeStyle='rgba(38,32,24,.92)'; ctx.lineCap='round'; ctx.lineWidth=4.2;
+  ctx.beginPath(); ctx.moveTo(-20,46); ctx.quadraticCurveTo(100,92,248,128); ctx.stroke();
+  ctx.lineWidth=2.2;
+  for(const c of kinClusters){ const p=P(c.t);
+    ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.quadraticCurveTo(p[0]+14,p[1]+10,p[0]+26,p[1]+22); ctx.stroke(); }
+  for(const c of kinClusters){ const p=P(c.t); const fl=Math.sin(S.t*1.4+c.ph)*(.6+wnd*1.8);
+    for(let l=0;l<4;l++){ const ang=l*1.9+c.ph+fl*.06, lx=p[0]+Math.cos(ang)*(10+l*4), ly=p[1]+Math.sin(ang)*(7+l*3)+4;
+      ctx.save(); ctx.translate(lx,ly); ctx.rotate(ang*.5+fl*.12);
+      ctx.fillStyle='rgba(46,58,40,.95)'; ctx.beginPath(); ctx.ellipse(0,0,7.5,3.2,0,0,7); ctx.fill();
+      ctx.fillStyle='rgba(70,84,56,.5)'; ctx.beginPath(); ctx.ellipse(-1,-.6,4.5,1.6,0,0,7); ctx.fill();
+      ctx.restore(); } }
+  for(const c of kinClusters){ const p=P(c.t);
+    for(let b=0;b<7;b++){ const ba=b*2.4+c.ph*1.7, bx=p[0]+6+Math.cos(ba)*(6+(b%3)*4)*c.s, by=p[1]+8+Math.sin(ba)*(5+(b%2)*3)*c.s;
+      ctx.fillStyle='rgba(216,138,42,.92)';
+      for(let d=0;d<4;d++){ const da=d*1.5708; ctx.beginPath(); ctx.arc(bx+Math.cos(da)*1.3,by+Math.sin(da)*1.3,.85,0,7); ctx.fill(); } } }
+  { const cyc=(S.t+kinPetal.ph)%kinPetal.cyc;
+    if(cyc<kinPetal.dur){ const k=cyc/kinPetal.dur, src=P(.3+((kinPetal.ph*13)%1)*.5);
+      const px=src[0]+8+Math.sin(S.t*1.8)*6+wnd*40*k, py=src[1]+10+k*k*340;
+      const a=Math.sin(Math.min(1,k*1.15)*Math.PI)*.85;
+      ctx.save(); ctx.translate(px,py); ctx.rotate(S.t*2.1);
+      ctx.fillStyle='rgba(216,138,42,'+a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,1.6,1.1,0,0,7); ctx.fill();
+      ctx.restore(); } }
+  ctx.restore();
+}
+function drawWeb(){ // silk barely there, anchored between branch and twig; dew glints scale with the moon
+  const wnd=S.wind||0, litK=(1-Math.cos(2*Math.PI*MP))/2;
+  const P=t=>[(1-t)*(1-t)*-20+2*t*(1-t)*100+t*t*248, (1-t)*(1-t)*46+2*t*(1-t)*92+t*t*128];
+  const c0=P(.66), cx=c0[0]+8+Math.sin(S.t*.9)*wnd*1.4, cy=c0[1]+26+Math.cos(S.t*.7)*wnd;
+  ctx.save();
+  ctx.strokeStyle='rgba(243,234,216,.16)'; ctx.lineWidth=.7;
+  const a1=P(.58), a2=P(.76), a3=[P(.5)[0]+26,P(.5)[1]+22];
+  for(const a of [a1,a2,a3]){ ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(a[0],a[1]); ctx.stroke(); }
+  for(let sp=0;sp<7;sp++){ const ang=sp/7*6.283+.4; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(ang)*15,cy+Math.sin(ang)*13); ctx.stroke(); }
+  for(const rr of [5,9.5,14]){ ctx.beginPath();
+    for(let sg=0;sg<=22;sg++){ const ang=sg/22*6.283, wob=1+Math.sin(ang*3+rr)*.06;
+      const wx=cx+Math.cos(ang)*rr*wob, wy=cy+Math.sin(ang)*rr*.87*wob;
+      if(sg===0) ctx.moveTo(wx,wy); else ctx.lineTo(wx,wy); } ctx.stroke(); }
+  for(const d of webDew){ const gl=.35+.65*Math.max(0,Math.sin(S.t*.8+d.ph));
+    ctx.fillStyle='rgba(224,232,244,'+(.12+.6*litK*gl).toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(cx+Math.cos(d.a)*d.r,cy+Math.sin(d.a)*d.r*.87,1,0,7); ctx.fill(); }
+  ctx.restore();
+}
+function tonboPos(t){ // the dragonfly's round: patrol figure-eights, two perches a cycle, eased in and out
+  const c=((t%52)+52)%52, pw=[[20,32],[40,49]];
+  let perched=-1, pe=0;
+  for(let i=0;i<2;i++){ const a=pw[i][0], b=pw[i][1];
+    if(c>=a-1.6&&c<=b+1.6){ perched=i; pe=Math.min(1,(c-a+1.6)/1.6)*Math.min(1,(b+1.6-c)/1.6); pe=pe*pe*(3-2*pe); break; } }
+  const a=t*.42+tonboPh;
+  const fx=500+Math.cos(a)*305, fy=groundY()-118+Math.sin(a*2)*52+Math.sin(t*1.7)*4;
+  if(perched>=0){ const sp=tonboSpots[perched]; return {x:fx+(sp[0]-fx)*pe, y:fy+(sp[1]-fy)*pe, pe, perched}; }
+  return {x:fx,y:fy,pe:0,perched:-1};
+}
+function drawTonbo(){ // wings held flat, ember eyes, the long red abdomen
+  const t0=tonboPin>=0?tonboPin:S.t, p=tonboPos(t0), flyK=1-p.pe;
+  const p2=tonboPos(t0+.12), mvx=p2.x-p.x, mvy=p2.y-p.y;
+  const hd=(flyK>.3&&Math.abs(mvx)+Math.abs(mvy)>.4)?Math.atan2(mvy,mvx):0;
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(hd*.35);
+  const flut=flyK>.3?Math.sin(S.t*46)*.5:Math.sin(S.t*2)*.05;
+  ctx.fillStyle='rgba(243,234,216,'+(.14+.08*flyK).toFixed(3)+')';
+  for(const s of [-1,1]){ ctx.beginPath(); ctx.ellipse(-1,s*6.5,7.5,2.1,s*(.5+flut),0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(2.5,s*5.6,6,1.8,s*(.34+flut*.8),0,7); ctx.fill(); }
+  ctx.strokeStyle='rgba(233,196,106,'+(.08+.2*flyK).toFixed(3)+')'; ctx.lineWidth=.7;
+  for(const s of [-1,1]){ ctx.beginPath(); ctx.ellipse(-1,s*6.5,7.5,2.1,s*(.5+flut),0,7); ctx.stroke(); }
+  ctx.fillStyle='rgba(158,43,30,.92)';
+  ctx.beginPath(); ctx.ellipse(-6.5,0,6.8,1.5,0,0,7); ctx.fill(); // abdomen
+  ctx.beginPath(); ctx.ellipse(2,0,3.2,2.3,0,0,7); ctx.fill(); // thorax
+  ctx.beginPath(); ctx.arc(6.4,0,2.1,0,7); ctx.fill(); // head
+  ctx.strokeStyle='rgba(18,16,13,.4)'; ctx.lineWidth=.6;
+  for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(-3.4-i*2.1,-1.2); ctx.lineTo(-3.4-i*2.1,1.2); ctx.stroke(); }
+  ctx.fillStyle='rgba(233,150,60,.85)';
+  ctx.beginPath(); ctx.arc(7.4,-1,.9,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(7.4,1,.9,0,7); ctx.fill();
+  ctx.restore(); }
+function drawBreath(){ // three soft puffs per exhale, rising and thinning as they cool
+  const a=breathPin>=0?breathPin:(S.t+breathPh)%4.2;
+  if(a>1.5) return;
+  for(let i=0;i<3;i++){ const pi=a-i*.22;
+    if(pi<0||pi>1.2) continue;
+    const k=pi/1.2, bx=556+pi*36+i*3+(S.wind||0)*10*k, by=352-pi*20-i*2-Math.sin(pi*3+i)*1.4;
+    ctx.fillStyle='rgba(243,234,216,'+(.26*(1-k)).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(bx,by,2.4+pi*8,(1.9+pi*6)*(1-.15*Math.sin(pi*4+i)),0,0,7); ctx.fill(); } }
+function drawKadomatsu(){ // three cut bamboo, pine at the foot, a straw band - one each side of the path
+  for(const kx of [408,648]){ const ky=groundY()+94;
+    ctx.save(); ctx.translate(kx,ky);
+    for(const side of [-1,1]){ // pine boughs at the foot
+      ctx.strokeStyle='rgba(30,48,34,.95)'; ctx.lineWidth=1.6; ctx.lineCap='round';
+      for(let n=0;n<7;n++){ const na=-.5-side*(.3+n*.22);
+        ctx.beginPath(); ctx.moveTo(side*6,0); ctx.lineTo(side*6+Math.cos(na)*14*side,Math.sin(na)*10-4); ctx.stroke(); } }
+    const stalks=[[-8,-40,-6],[0,-52,0],[8,-34,6]]; // heights staggered, cuts angled
+    for(const st of stalks){ const sx=st[0], sh=st[1], sl=st[2];
+      ctx.strokeStyle='rgba(52,86,44,.95)'; ctx.lineWidth=5; ctx.lineCap='butt';
+      ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,sh); ctx.stroke();
+      ctx.strokeStyle='rgba(126,150,74,.85)'; ctx.lineWidth=5; // the angled cut face
+      ctx.beginPath(); ctx.moveTo(sx-2.5+sl*.3,sh+1.5); ctx.lineTo(sx+2.5+sl*.3,sh-1.5); ctx.stroke();
+      ctx.strokeStyle='rgba(38,64,34,.9)'; ctx.lineWidth=1.1; // a node ring
+      ctx.beginPath(); ctx.moveTo(sx-2.5,sh*.45); ctx.lineTo(sx+2.5,sh*.45); ctx.stroke(); }
+    ctx.strokeStyle='rgba(178,148,84,.9)'; ctx.lineWidth=3.4; // the straw band
+    ctx.beginPath(); ctx.moveTo(-11,-24); ctx.lineTo(11,-24); ctx.stroke();
+    ctx.restore(); } }
+function drawSusuki(){ // autumn moon-viewing grass - silver plumes catching the moon, bending with the night's wind
+  const gy=groundY(), wnd=S.wind||0, light=.30+.34*fullK;
+  ctx.lineCap='round';
+  for(const s of susukiStems){
+    const bend=wnd*s.h*.34+Math.sin(S.t*.9+s.ph)*2.2+s.lean*.3;
+    const pt=u=>{ const a=(1-u)*(1-u),b=2*(1-u)*u,c=u*u;
+      return [a*s.x+b*(s.x+bend*.4)+c*(s.x+bend), a*(gy+3)+b*(gy-s.h*.55)+c*(gy-s.h+8)]; };
+    const tp=pt(1);
+    ctx.strokeStyle='rgba(44,40,30,.82)'; ctx.lineWidth=1.7;
+    ctx.beginPath(); ctx.moveTo(s.x,gy+3); ctx.quadraticCurveTo(s.x+bend*.4,gy-s.h*.55,tp[0],tp[1]); ctx.stroke();
+    const fl=.85+.15*Math.sin(S.t*1.3+s.ph);
+    for(let k=0;k<9;k++){ const u=.60+k*.05, p=pt(u);
+      const ang=-Math.PI/2+bend*.012+(k-4)*.17, L=6.5+2.6*Math.sin(s.ph+k*2.3);
+      ctx.strokeStyle='rgba(233,224,199,'+(light*fl*(.45+.55*u)).toFixed(3)+')';
+      ctx.lineWidth=1.5-.5*u;
+      ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(p[0]+Math.cos(ang)*L,p[1]+Math.sin(ang)*L); ctx.stroke(); }
+  }
+}
 function drawParts(){
   for(const p of S.parts){ ctx.globalAlpha=Math.max(0,p.ttl*1.6); ctx.fillStyle=p.col; ctx.fillRect(p.x,p.y,p.s,p.s); }
   ctx.globalAlpha=1;
@@ -449,7 +992,8 @@ function drawParts(){
     if(l.k==='firefly'){ const bl=Math.max(0,Math.sin(S.t*2.4+l.ph));
       ctx.fillStyle='rgba(214,226,140,'+(.10*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
       ctx.fillStyle='rgba(242,246,206,'+(.85*bl).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,1.9,0,7); ctx.fill(); }
-    else if(l.k==='snow'){ ctx.fillStyle='rgba(243,240,232,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,1.8,0,7); ctx.fill(); }
+    else if(l.k==='snow'){ if(l.first){ ctx.fillStyle='rgba(243,240,232,'+(l.a*.22).toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,6.4,0,7); ctx.fill(); }
+      ctx.fillStyle='rgba(243,240,232,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.arc(0,0,l.first?3.4:1.8,0,7); ctx.fill(); }
     else if(l.k==='petal'){ ctx.rotate(Math.sin(S.t*2+l.ph)*.9);
       ctx.fillStyle='rgba(233,184,196,'+l.a.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(0,0,4.4,2.6,0,0,7); ctx.fill();
       ctx.fillStyle='rgba(200,140,152,'+(l.a*.8).toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(1.4,.4,1.8,1.1,0,0,7); ctx.fill(); }
@@ -459,14 +1003,38 @@ function drawParts(){
 }
 function draw(){
   drawSky(); drawGround();
+  if(puddleOn) drawPuddle();
+  if(lilyOn) drawLilyStem();
+  if(frogOn) drawFrog();
+  if(kadoOn) drawKadomatsu();
+  if(kinOn) drawKin();
+  if(webOn) drawWeb();
+  if(frostOn) drawCamphor();
+  if(susukiOn) drawSusuki();
+  if(higanOn) drawHigan();
   drawEma();
   lantern(206,groundY()-4,1.06); lantern(794,groundY()-4,1.06);
+  if(S.mothA>.02){ // slow loops around the right lantern's flame
+    const mt=S.t*2.1+mothPh;
+    const mx=794+Math.cos(mt)*24+Math.sin(S.t*5.3)*4, my=groundY()-58+Math.sin(mt*2)*13+Math.sin(S.t*17)*1.2;
+    const fl=.5+.5*Math.sin(S.t*22);
+    ctx.save(); ctx.translate(mx,my); ctx.rotate(Math.sin(mt)*.5);
+    ctx.fillStyle='rgba(238,228,200,'+(.55*S.mothA*(.4+.6*fl)).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(-2.6,0,2.8,1.6,-.7-fl*.5,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(2.6,0,2.8,1.6,.7+fl*.5,0,7); ctx.fill();
+    ctx.fillStyle='rgba(70,58,40,'+(.8*S.mothA).toFixed(3)+')';
+    ctx.beginPath(); ctx.ellipse(0,0,1.1,2.2,0,0,7); ctx.fill();
+    ctx.restore(); }
   drawShrine();
-  drawCat();
+  if(S.strollT>=0) drawStrollCat(); else drawCat();
+  if(breathOn&&S.strollT<0) drawBreath();
   drawRope();
   drawBox();
+  if(tonboOn) drawTonbo();
+  if(dangoOn) drawDango();
   drawFurin();
   drawCoin();
+  drawSmoke();
   drawParts();
   if(rainK>0){ // rain on the roof
     ctx.strokeStyle='rgba(196,208,224,'+(.14*rainK).toFixed(3)+')'; ctx.lineWidth=1.1;
@@ -476,6 +1044,19 @@ function draw(){
       ctx.moveTo(rx,ry); ctx.lineTo(rx-4,ry+16); }
     ctx.stroke();
     ctx.fillStyle='rgba(180,200,222,'+(.05*rainK).toFixed(3)+')'; ctx.fillRect(0,groundY(),W,H-groundY()); }
+  { // a bead gathers at the eave's left tip, then lets go - rain nights only
+    const rk=Math.max(rainK,dripPin>=0?.8:0);
+    if(rk>0){ const ph=(dripPin>=0?dripPin:(S.t*.42+dripOff))%1;
+      const ex=W/2-141, ey=groundY()-180, sy=groundY()+58, col='rgba(198,210,226,'; // the lip's corner, clear of the furin
+      if(ph<.55){ const r=.8+1.7*(ph/.55); // it gathers
+        ctx.fillStyle=col+(.55*rk).toFixed(3)+')';
+        ctx.beginPath(); ctx.ellipse(ex,ey+r*.4,r*.62,r,0,0,7); ctx.fill(); }
+      else if(ph<.85){ const q=(ph-.55)/.3; // it lets go
+        ctx.fillStyle=col+(.6*rk).toFixed(3)+')';
+        ctx.beginPath(); ctx.ellipse(ex,ey+(sy-ey)*q*q,1.5,2.7,0,0,7); ctx.fill(); }
+      else { const p2=(ph-.85)/.15; // the tap on the step
+        ctx.fillStyle=col+((.5*(1-p2))*rk).toFixed(3)+')';
+        for(const [ox,oy] of [[-6,0],[0,-3],[6,0]]){ ctx.beginPath(); ctx.arc(ex+ox*p2,sy+oy*p2-6*p2*(1-p2),1.3,0,7); ctx.fill(); } } } }
   // vignette
   const v=ctx.createRadialGradient(W/2,H*.45,H*.3,W/2,H*.45,H*.95);
   v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(6,5,3,.55)');
@@ -522,7 +1103,7 @@ function showWish(i){
 function hit(x,y){
   const r=cv.getBoundingClientRect(), px=(x-r.left)/r.width*W, py=(y-r.top)/r.height*H;
   const cx=W/2, gy=groundY();
-  for(const e of (S.ema||[])){ if(Math.abs(px-e.x)<17 && py>e.y-2 && py<e.y+32){ showWish(e.w); S.ropeV=Math.max(S.ropeV,.5); return; } }
+  for(const e of (S.ema||[])){ if(Math.abs(px-e.x)<17 && py>e.y-2 && py<e.y+32){ showWish(e.w); S.ropeV=Math.max(S.ropeV,.5); S.emaSw[e.i]=Math.min(.6,(S.emaSw[e.i]||0)+.34); S.glanceT=S.t; S.glanceX=e.x; S.glanceY=e.y; return; } }
   if(S.state==='arrive'){ if(px>cx-80&&px<cx+80&&py>gy-10&&py<gy+56) offer(); else offer(); }
   else if(S.state==='offered'){ ring(); }
   else { S.ropeV=Math.max(S.ropeV,1.8); sfxBell(); }
@@ -539,23 +1120,83 @@ function step(dt){ S.t+=dt;
   // one wind over the whole shrine - the furin's gust is the world's gust
   S.wind=Math.sin(S.t*.5)*.5+Math.sin(S.t*1.7)*.3+Math.sin(S.t*3.1)*.2;
   S.furinGust=Math.abs(S.wind);
+  // a rare strong gust shakes a soft lump of snow loose from the downwind eave
+  if(season==='winter'&&S.slideT<0&&Math.abs(S.wind)>.78&&S.t-S.slideCD>22){
+    S.slideCD=S.t;
+    if(mulberry32((seedNum^0x51de)+Math.floor(S.t*7))()<.3){ S.slideT=S.t; S.slideSide=S.wind>0?1:-1; }
+  }
+  // tapped ema plaques swing, then settle
+  for(const k in S.emaSw){ S.emaSw[k]*=Math.pow(.35,dt); if(S.emaSw[k]<.012) delete S.emaSw[k]; }
   // rope physics - the wind breathes on the suzu rope even untouched
   S.ropeV+=(-S.ropeA*14+S.wind*.5)*dt; S.ropeV*=Math.pow(.4,dt); S.ropeA+=S.ropeV*dt;
+  // suzu glint: the bell flashes once as a real swing settles back to rest
+  const rv=Math.abs(S.ropeV);
+  if(rv>=.42) S.wasMoving=true;
+  else if(S.wasMoving&&rv<.3){ S.wasMoving=false; S.glintT=S.t; }
+  if(S.glintT>=0&&S.t-S.glintT>1.2) S.glintT=-1;
+  if(S.glanceT>=0&&S.t-S.glanceT>2.4) S.glanceT=-1;
+  if(slidePin>=0){ S.slideT=S.t-slidePin; if(qs.get('side')==='-1') S.slideSide=-1; }
+  if(S.slideT>=0&&S.t-S.slideT>3.4) S.slideT=-1; // spent lump - the roof can shed again
+  // every so often she gets up, strolls to the ema rack, and rubs her cheek on the post
+  if(S.strollT<0&&S.t>8&&S.t-S.strollCD>80&&mulberry32((seedNum^0x7a11)+Math.floor(S.t*3))()<.45){ S.strollT=S.t; S.strollCD=S.t; }
+  if(strollPin>=0) S.strollT=S.t-strollPin;
+  if(S.strollT>=0&&S.t-S.strollT>5.8) S.strollT=-1; // home again
+  // hoshi furu - when the seeded moment comes and the sky is clear enough, she looks up
+  if(S.shootT<0&&S.t>=shootAt){ if(rainK<.5){ S.shootT=S.t; if(S.glow>.5&&S.strollT<0){ S.glanceT=S.t; S.glanceX=shootX+shootDir*90; S.glanceY=shootY+40; } } else shootAt+=25; } // the rain postpones it; she notices only when awake
+  if(shootPin>=0){ S.shootT=S.t-shootPin; if(shootPin<1&&S.glow>.5&&S.strollT<0&&S.glanceT<0){ S.glanceT=S.t-shootPin*.5; S.glanceX=shootX+shootDir*90; S.glanceY=shootY+40; } } // QA pin mirrors the glance
   // acknowledgment glow
   if(S.ackT>=0) S.glow=Math.min(1,S.glow+dt*.8);
+  // once the ritual is done she grooms now and then - day-seeded phase on a slow cycle
+  S.groomG = S.state==='done' ? (groomPin>=0?groomPin:((S.t+groomPh)%53)) : -1;
+  // the moth flutters off when a gust picks up or the rain turns heavy
+  const calm=Math.max(0,Math.min(1,1-(Math.abs(S.wind)-.25)/.25));
+  const dry=Math.max(0,Math.min(1,1-(rainK-.25)/.3));
+  S.mothA=qs.get('moth')!=null?(+qs.get('moth')>0?1:0):(mothNight?calm*dry:0); // lever pins it for QA
+  // the maple leaf drifts down, rests, and leaves when she grooms or a hard gust passes
+  if(leafHeadOn){
+    if(S.leafSt==null){ S.leafSt=-1; S.leafT=0; }
+    if(leafPin>=0){ S.leafSt=1; S.leafT=S.t-leafPin; }
+    else {
+      if(S.leafSt===-1&&S.t>leafT0){ S.leafSt=0; S.leafT=S.t; }
+      if(S.leafSt===0&&S.t-S.leafT>2.6){ S.leafSt=1; S.leafT=S.t; }
+      if(S.leafSt===1&&((S.groomG>=0&&S.groomG<4.5)||Math.abs(S.wind)>.82)){ S.leafSt=2; S.leafT=S.t; }
+    }
+  }
+  // the frog keeps its own slow schedule, day-seeded
+  if(frogOn){
+    if(S.hopT==null){ S.hopT=-1; S.frogSpot=0; S.hopFrom=0; S.frogNext=4+frogFR()*6; S.frogSplashes=[]; }
+    if(hopPin>=0){ S.hopFrom=0; S.frogSpot=1; S.hopT=S.t-hopPin;
+      if(S.glow>.5&&S.strollT<0&&hopPin<2.2){ const sp=frogSpots[1]; S.glanceT=S.t-hopPin; S.glanceX=sp[0]; S.glanceY=sp[1]; } } // QA pin mirrors the glance
+    else {
+      if(S.hopT<0&&S.t>S.frogNext){ S.hopT=S.t; S.hopFrom=S.frogSpot; S.frogSpot=(S.frogSpot+1+Math.floor(mulberry32((seedNum^0xf407)+Math.floor(S.t*10))()*2))%frogSpots.length;
+        if(S.glow>.5&&S.strollT<0){ const sp=frogSpots[S.frogSpot]; S.glanceT=S.t; S.glanceX=sp[0]; S.glanceY=sp[1]; } } // she notices the frog set off
+      if(S.hopT>=0&&S.t-S.hopT>.6){ S.hopT=-1; S.frogNext=S.t+7+mulberry32((seedNum^0xf408)+Math.floor(S.t*10))()*12;
+        const sp=frogSpots[S.frogSpot], dx=sp[0]-puddleX, dy=sp[1]-(groundY()+96);
+        if(dx*dx+dy*dy*4<48*48){ S.frogSplashes.push({x:sp[0],y:sp[1],t:S.t});
+          if(S.glow>.5&&S.strollT<0){ S.glanceT=S.t; S.glanceX=sp[0]; S.glanceY=sp[1]; } } } // and the sound of water
+    }
+    for(let i=S.frogSplashes.length-1;i>=0;i--) if(S.t-S.frogSplashes[i].t>1.2) S.frogSplashes.splice(i,1);
+  }
+  // she watches the dragonfly when it works her side of the yard
+  if(tonboOn&&S.glow>.5&&S.strollT<0){ const tp=tonboPos(tonboPin>=0?tonboPin:S.t), tdx=tp.x-526, tdy=tp.y-340;
+    if(tdx*tdx+tdy*tdy<150*150){ S.glanceT=S.t; S.glanceX=tp.x; S.glanceY=tp.y; } }
   // particles
   for(let i=S.parts.length-1;i>=0;i--){ const p=S.parts[i]; p.ttl-=dt; p.y-=20*dt; if(p.ttl<=0) S.parts.splice(i,1); }
   if(season==='spring' && Math.random()<dt*.6) S.leaves.push({k:'petal',x:W+20,y:-10+Math.random()*120,vy:14+Math.random()*10,ph:Math.random()*7,a:.5+Math.random()*.3,ttl:22});
   if(season==='autumn' && Math.random()<dt*.5) S.leaves.push({k:'leaf',x:W+20,y:-10,vy:22+Math.random()*18,ph:Math.random()*7,a:.4+Math.random()*.3,ttl:16});
-  if(season==='winter' && Math.random()<dt*1.1) S.leaves.push({k:'snow',x:Math.random()*(W+60)-30,y:-8,vy:20+Math.random()*16,ph:Math.random()*7,a:.5+Math.random()*.35,ttl:26});
+  if(season==='winter' && Math.random()<dt*1.1){ const first=S.firstSnow; S.firstSnow=false;
+    S.leaves.push(first?{k:'snow',first:true,x:Math.random()*(W+60)-30,y:-8,vy:11,ph:Math.random()*7,a:.95,ttl:40}
+                        :{k:'snow',x:Math.random()*(W+60)-30,y:-8,vy:20+Math.random()*16,ph:Math.random()*7,a:.5+Math.random()*.35,ttl:26}); }
   if(season==='summer' && Math.random()<dt*.35 && S.leaves.length<14) S.leaves.push({k:'firefly',x:60+Math.random()*(W-120),y:groundY()-8-Math.random()*120,vy:-6-Math.random()*7,ph:Math.random()*7,a:1,ttl:12});
   for(let i=S.leaves.length-1;i>=0;i--){ const l=S.leaves[i]; l.ttl-=dt;
     if(l.k==='firefly'){ l.y+=l.vy*dt; l.x+=Math.sin(S.t*.9+l.ph)*14*dt; if(l.y<30) l.vy=Math.abs(l.vy)*.6; }
     else { l.y+=l.vy*dt; l.x-=(l.k==='snow'?8:26)*dt+Math.sin(S.t+l.ph)*10*dt; l.x+=Math.sin(S.t*1.6+l.ph)*16*dt*8; l.x+=(S.wind||0)*42*dt; }
     if(l.ttl<=0||l.x<-30||l.y>H+20) S.leaves.splice(i,1); }
-  // furin chime on strong gusts
-  if(AC&&!muted){ S.furinT-=dt; if(S.furinT<=0){ S.furinT=6+Math.random()*9;
-    if(S.furinGust>.5){ const f0=2900+Math.random()*900; tone(f0,f0,.5,'sine',.012); tone(f0*1.5,f0*1.5,.4,'sine',.008,.1); } } }
+  // furin chime on strong gusts - a scene event whether or not the sound is on
+  S.furinT-=dt; if(S.furinT<=0){ S.furinT=6+Math.random()*9;
+    if(S.furinGust>.5){ S.chimeT=S.t;
+      if(AC&&!muted){ const f0=2900+Math.random()*900; tone(f0,f0,.5,'sine',.012); tone(f0*1.5,f0*1.5,.4,'sine',.008,.1); } } }
+  if(chimePin>=0) S.chimeT=S.t-chimePin;
   // rain bed + roof drips
   if(AC) rainSet(rainK*.05);
   if(AC&&!muted&&rainK>0){ S.dripT=(S.dripT||2.5)-dt; if(S.dripT<=0){ S.dripT=2+Math.random()*5; tone(2100+Math.random()*600,1600,.05,'sine',.004); } }
@@ -578,7 +1219,13 @@ if(qs.get('probe')){
   if(qs.get('act')==='ring'){ offer(); ring(); }
   if(qs.get('act')==='ema'){ draw(); if(S.ema&&S.ema.length){ showWish(S.ema[0].w); window.__wish=S.ema[0].w; } }
   if(qs.get('act')) for(let i=0;i<40;i++) step(1/60);
-  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),rain:+rainK.toFixed(2),glow:+S.glow.toFixed(2),err:window.__err||''});
+  if(qs.get('glint')){ S.ropeV=2.6; S.wasMoving=true;
+    let gd=0; while(S.glintT<0&&gd++<900) step(1/60);
+    for(let i=0;i<33;i++) step(1/60); }
+  if(qs.get('tap')!=null){ draw(); const ti=+qs.get('tap');
+    if(S.ema&&S.ema[ti]){ S.emaSw[S.ema[ti].i]=.5; window.__wish=S.ema[ti].w; S.glanceT=S.t; S.glanceX=S.ema[ti].x; S.glanceY=S.ema[ti].y; }
+    for(let i=0;i<9;i++) step(1/60); }
+  document.title='PROBE '+JSON.stringify({state:S.state,streak,doneToday,blessIdx,season,omamori,ema:(S.ema||[]).length,wish:window.__wish!=null?window.__wish:-1,moon:+MP.toFixed(3),full:+fullK.toFixed(2),rain:+rainK.toFixed(2),glow:+S.glow.toFixed(2),glint:S.glintT>=0?+(S.t-S.glintT).toFixed(2):-1,slide:S.slideT>=0?+(S.t-S.slideT).toFixed(2):-1,stroll:S.strollT>=0?+(S.t-S.strollT).toFixed(2):-1,chime:S.chimeT>=0?+(S.t-S.chimeT).toFixed(2):-1,fs:S.firstSnow?0:1,smoke:S.state==='done'?+(S.ackT>=0?S.t-S.ackT:S.t+40).toFixed(2):-1,groom:S.groomG>=0?+S.groomG.toFixed(2):-1,drip:(rainK>0||dripPin>=0)?+((dripPin>=0?dripPin:(S.t*.42+dripOff))%1).toFixed(2):-1,moth:+(S.mothA||0).toFixed(2),susuki:susukiOn?1:0,puddle:puddleOn?1:0,frog:frogOn?1:0,momiji:S.leafSt===1?+(S.t-S.leafT).toFixed(2):(S.leafSt!=null?S.leafSt:-1),dango:dangoOn?1:0,heron:heronOn?1:0,higan:higanOn?1:0,lily:lilyOn?1:0,kin:kinOn?1:0,web:webOn?1:0,tonbo:tonboOn?+((tonboPin>=0?tonboPin:S.t)%52).toFixed(1):0,breath:breathOn?+((breathPin>=0?breathPin:(S.t+breathPh)%4.2)).toFixed(2):0,frost:frostOn?1:0,kado:kadoOn?1:0,poem:poemIdx,shoot:shootPin>=0?shootPin:(S.shootT>=0?+(S.t-S.shootT).toFixed(2):-1),err:window.__err||''});
   draw();
 }
 </script>
